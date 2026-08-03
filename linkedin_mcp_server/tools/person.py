@@ -366,3 +366,57 @@ def register_person_tools(
                 raise_tool_error(relogin_exc, "get_my_profile")
         except Exception as e:
             raise_tool_error(e, "get_my_profile")  # NoReturn
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Get Connections",
+        annotations={"readOnlyHint": True, "openWorldHint": True},
+        tags={"person", "scraping"},
+        exclude_args=["extractor"],
+    )
+    async def get_connections(
+        ctx: Context,
+        max_pages: Annotated[int, Field(ge=1, le=25)] = 25,
+        extractor: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        List the authenticated user's 1st-degree LinkedIn connections.
+
+        Opens the My Network connections page, uses LinkedIn's own
+        RECENTLY_ADDED ordering, and paginates through the full connection list.
+        Returns both raw text for LLM parsing and a structured connections array.
+
+        Args:
+            ctx: FastMCP context for progress reporting
+            max_pages: Maximum connections pages to load (1-25, default 25).
+                LinkedIn's own connections view is capped at 1000 results, so
+                25 pages at 40 connections each covers the full visible set.
+
+        Returns:
+            Dict with url, sections (connections -> raw text), optional
+            references, and a connections list containing full_name,
+            linkedin_url, and headline for each connection.
+        """
+        try:
+            extractor = extractor or await get_ready_extractor(
+                ctx, tool_name="get_connections"
+            )
+            logger.info("Fetching connections (max_pages=%d)", max_pages)
+
+            await ctx.report_progress(
+                progress=0, total=100, message="Loading connections"
+            )
+
+            result = await extractor.get_connections(max_pages=max_pages)
+
+            await ctx.report_progress(progress=100, total=100, message="Complete")
+
+            return result
+
+        except AuthenticationError as e:
+            try:
+                await handle_auth_error(e, ctx)
+            except Exception as relogin_exc:
+                raise_tool_error(relogin_exc, "get_connections")
+        except Exception as e:
+            raise_tool_error(e, "get_connections")  # NoReturn

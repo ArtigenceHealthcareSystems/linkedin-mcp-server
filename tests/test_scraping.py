@@ -4743,6 +4743,161 @@ class TestGetInbox:
         assert refs[0]["text"] == "Tony Chan"
 
 
+class TestGetConnections:
+    async def test_returns_connections_section_and_structured_rows(self, mock_page):
+        extractor = LinkedInExtractor(mock_page)
+        page_payload = {
+            "ok": True,
+            "request_url": (
+                "https://www.linkedin.com/voyager/api/relationships/dash/connections"
+                "?q=search&sortType=RECENTLY_ADDED&start=0&count=40"
+            ),
+            "data": {
+                "elements": [
+                    {
+                        "connectedMemberResolutionResult": {
+                            "firstName": "Jane",
+                            "lastName": "Doe",
+                            "headline": "Staff Engineer at Acme",
+                            "publicIdentifier": "janedoe",
+                        }
+                    },
+                    {
+                        "connectedMemberResolutionResult": {
+                            "firstName": "John",
+                            "lastName": "Smith",
+                            "occupation": "Founder at Beta",
+                            "publicIdentifier": "johnsmith",
+                        }
+                    },
+                ]
+            },
+        }
+        with (
+            patch.object(extractor, "_navigate_to_page", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.detect_rate_limit",
+                new_callable=AsyncMock,
+            ),
+            patch.object(extractor, "_wait_for_main_text", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.handle_modal_close",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                extractor,
+                "_fetch_connections_page",
+                new_callable=AsyncMock,
+                return_value=page_payload,
+            ),
+        ):
+            result = await extractor.get_connections(max_pages=2)
+
+        assert result["url"] == (
+            "https://www.linkedin.com/mynetwork/invite-connect/connections/"
+            "?sortType=RECENTLY_ADDED"
+        )
+        assert len(result["connections"]) == 2
+        assert result["connections"][0] == {
+            "full_name": "Jane Doe",
+            "linkedin_url": "https://www.linkedin.com/in/janedoe/",
+            "headline": "Staff Engineer at Acme",
+        }
+        assert (
+            result["sections"]["connections"]
+            == "Jane Doe\nStaff Engineer at Acme\nhttps://www.linkedin.com/in/janedoe/\n---\nJohn Smith\nFounder at Beta\nhttps://www.linkedin.com/in/johnsmith/"
+        )
+        assert result["references"]["connections"][0]["url"] == "/in/janedoe/"
+
+    async def test_stops_when_next_page_has_no_new_connections(self, mock_page):
+        extractor = LinkedInExtractor(mock_page)
+        first_page = {
+            "ok": True,
+            "request_url": "https://www.linkedin.com/voyager/api/relationships/dash/connections?start=0",
+            "data": {
+                "elements": [
+                    {
+                        "connectedMemberResolutionResult": {
+                            "firstName": "Jane",
+                            "lastName": f"Doe {i}",
+                            "headline": "Engineer",
+                            "publicIdentifier": f"janedoe{i}",
+                        }
+                    }
+                    for i in range(40)
+                ]
+            },
+        }
+        second_page = {
+            "ok": True,
+            "request_url": "https://www.linkedin.com/voyager/api/relationships/dash/connections?start=40",
+            "data": {
+                "elements": [
+                    {
+                        "connectedMemberResolutionResult": {
+                            "firstName": "Jane",
+                            "lastName": f"Doe {i}",
+                            "headline": "Engineer",
+                            "publicIdentifier": f"janedoe{i}",
+                        }
+                    }
+                    for i in range(40)
+                ]
+            },
+        }
+        fetch_mock = AsyncMock(side_effect=[first_page, second_page])
+        with (
+            patch.object(extractor, "_navigate_to_page", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.detect_rate_limit",
+                new_callable=AsyncMock,
+            ),
+            patch.object(extractor, "_wait_for_main_text", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.handle_modal_close",
+                new_callable=AsyncMock,
+            ),
+            patch.object(extractor, "_fetch_connections_page", fetch_mock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as sleep_mock,
+        ):
+            result = await extractor.get_connections(max_pages=3)
+
+        assert len(result["connections"]) == 40
+        assert fetch_mock.await_count == 2
+        sleep_mock.assert_awaited_once()
+
+    async def test_surfaces_authentication_error_from_connections_api(self, mock_page):
+        extractor = LinkedInExtractor(mock_page)
+        with (
+            patch.object(extractor, "_navigate_to_page", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.detect_rate_limit",
+                new_callable=AsyncMock,
+            ),
+            patch.object(extractor, "_wait_for_main_text", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.handle_modal_close",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                extractor,
+                "_fetch_connections_page",
+                new_callable=AsyncMock,
+                return_value={
+                    "ok": False,
+                    "error_type": "authentication_error",
+                    "error_message": "Session refresh required.",
+                    "status": 401,
+                },
+            ),
+        ):
+            with pytest.raises(AuthenticationError, match="Session refresh required"):
+                await extractor.get_connections()
+
+
 class TestGetConversation:
     async def test_returns_conversation_by_thread_id(self, mock_page):
         """get_conversation with thread_id navigates directly to thread URL."""

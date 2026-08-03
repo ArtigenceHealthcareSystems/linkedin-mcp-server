@@ -385,6 +385,7 @@ def _tool_name_for_context(payload: dict[str, Any]) -> str | None:
     context = str(payload.get("context") or "")
     if context in {
         "get_person_profile",
+        "get_connections",
         "get_company_profile",
         "get_company_posts",
         "get_job_details",

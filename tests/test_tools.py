@@ -35,6 +35,7 @@ def _make_mock_extractor(scrape_result: dict) -> MagicMock:
     mock.search_conversations = AsyncMock(return_value=scrape_result)
     mock.send_message = AsyncMock(return_value=scrape_result)
     mock.get_my_profile = AsyncMock(return_value=scrape_result)
+    mock.get_connections = AsyncMock(return_value=scrape_result)
     mock.search_companies = AsyncMock(return_value=scrape_result)
     mock.search_posts = AsyncMock(return_value=scrape_result)
     mock.get_company_employees = AsyncMock(return_value=scrape_result)
@@ -963,6 +964,83 @@ class TestGetMyProfileTool:
             await tool_fn(mock_context, extractor=mock_extractor)
 
 
+class TestGetConnectionsTool:
+    async def test_get_connections_success(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=RECENTLY_ADDED",
+            "sections": {
+                "connections": (
+                    "Jane Doe\nStaff Engineer at Acme\n"
+                    "https://www.linkedin.com/in/janedoe/"
+                )
+            },
+            "connections": [
+                {
+                    "full_name": "Jane Doe",
+                    "linkedin_url": "https://www.linkedin.com/in/janedoe/",
+                    "headline": "Staff Engineer at Acme",
+                }
+            ],
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_connections")
+        result = await tool_fn(mock_context, extractor=mock_extractor)
+        assert "connections" in result["sections"]
+        assert result["connections"][0]["full_name"] == "Jane Doe"
+        mock_extractor.get_connections.assert_awaited_once_with(max_pages=25)
+
+    async def test_get_connections_passes_max_pages(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=RECENTLY_ADDED",
+            "sections": {},
+            "connections": [],
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_connections")
+        await tool_fn(mock_context, max_pages=3, extractor=mock_extractor)
+        mock_extractor.get_connections.assert_awaited_once_with(max_pages=3)
+
+    async def test_get_connections_rejects_zero_max_pages(self, mock_context):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+
+        with pytest.raises(ValidationError, match="max_pages"):
+            await mcp.call_tool("get_connections", {"max_pages": 0})
+
+    async def test_get_connections_error(self, mock_context):
+        from fastmcp.exceptions import ToolError
+
+        from linkedin_mcp_server.exceptions import SessionExpiredError
+
+        mock_extractor = MagicMock()
+        mock_extractor.get_connections = AsyncMock(side_effect=SessionExpiredError())
+
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_connections")
+        with pytest.raises(ToolError, match="Session expired"):
+            await tool_fn(mock_context, extractor=mock_extractor)
+
+
 class TestSearchCompaniesTool:
     async def test_search_companies_success(self, mock_context):
         expected = {
@@ -1260,11 +1338,15 @@ class TestToolTimeouts:
 
         tool_names = (
             "get_person_profile",
+            "get_my_profile",
+            "get_connections",
             "connect_with_person",
             "get_sidebar_profiles",
             "search_people",
             "get_company_profile",
             "get_company_posts",
+            "search_companies",
+            "get_company_employees",
             "get_job_details",
             "search_jobs",
             "get_saved_jobs",
@@ -1291,6 +1373,7 @@ class TestToolTimeouts:
         tool_names = (
             "get_person_profile",
             "get_my_profile",
+            "get_connections",
             "connect_with_person",
             "get_sidebar_profiles",
             "search_people",
