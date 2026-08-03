@@ -370,6 +370,7 @@ def get_version() -> str:
         from importlib.metadata import PackageNotFoundError, version
 
         for package_name in (
+            "artigence-linkedin-mcp",
             "mcp-server-linkedin",
             "linkedin-scraper-mcp",
             "linkedin-mcp-server",

@@ -1,6 +1,6 @@
 """Background check for a newer release on PyPI, surfaced as a tool-result notice.
 
-Most users install via ``uvx mcp-server-linkedin@latest``, which re-resolves PyPI
+Most users install via ``uvx artigence-linkedin-mcp@latest``, which re-resolves PyPI
 on every client launch, so they are already current. This is defense-in-depth for
 the minority that pin a fixed version, run a stale Docker tag, or are offline: it
 polls the PyPI JSON API at most once a day, caches the answer under
@@ -33,9 +33,9 @@ from linkedin_mcp_server import __version__
 
 logger = logging.getLogger(__name__)
 
-_PYPI_URL = "https://pypi.org/pypi/mcp-server-linkedin/json"
+_PYPI_URL = "https://pypi.org/pypi/artigence-linkedin-mcp/json"
 _LATEST_RELEASE_URL = (
-    "https://github.com/stickerdaniel/linkedin-mcp-server/releases/latest"
+    "https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/releases/latest"
 )
 _CACHE_PATH = Path.home() / ".linkedin-mcp" / "update-check.json"
 _CACHE_TTL_SECONDS = 24 * 60 * 60
@@ -54,7 +54,11 @@ def _is_source_install() -> bool:
     installs from PyPI (uvx, pip, pipx, including pinned versions) have no such file
     and remain the audience for the update nudge.
     """
-    for name in ("mcp-server-linkedin", "linkedin-scraper-mcp"):
+    for name in (
+        "artigence-linkedin-mcp",
+        "mcp-server-linkedin",
+        "linkedin-scraper-mcp",
+    ):
         try:
             text = distribution(name).read_text("direct_url.json")
         except PackageNotFoundError:
@@ -106,7 +110,7 @@ def _fetch_latest_from_pypi() -> str | None:
         _PYPI_URL,
         headers={
             "Accept": "application/json",
-            "User-Agent": f"mcp-server-linkedin/{__version__}",
+            "User-Agent": f"artigence-linkedin-mcp/{__version__}",
         },
     )
     try:
@@ -212,7 +216,7 @@ def _update_action() -> str:
         )
     return (
         "Check this server's entry in the MCP client config: it should run "
-        '"uvx mcp-server-linkedin@latest" rather than a pinned version. If it pins a '
+        '"uvx artigence-linkedin-mcp@latest" rather than a pinned version. If it pins a '
         "version or drops @latest, fix it and restart the client."
     )
 
@@ -231,7 +235,7 @@ def pending_update_notice() -> str | None:
     if not _is_meaningfully_behind(current, latest):
         return None
     return (
-        f"Update available: mcp-server-linkedin {latest} is out (you are on "
+        f"Update available: artigence-linkedin-mcp {latest} is out (you are on "
         f"{current}). {_update_action()}"
     )
 

@@ -91,7 +91,7 @@ PROTOCOL_VERSION = 1
 
 _DESCRIPTOR_FILE = "daemon.json"
 _DAEMON_DIR = "daemon"
-_APPLICATION_STATE_DIR = ".mcp-server-linkedin"
+_APPLICATION_STATE_DIR = ".artigence-linkedin-mcp"
 
 # Enough that guessing is not a strategy. Read straight from the OS source.
 _TOKEN_BYTES = 32

@@ -188,7 +188,7 @@ def create_mcp_server(
     set_process_role(role)
 
     mcp = FastMCP(
-        "mcp-server-linkedin",
+        "artigence-linkedin-mcp",
         version=__version__,
         # Selected here rather than gated inside, because for a proxy every step
         # of it is wrong: it would install a Chromium this process never opens,

@@ -4,12 +4,8 @@ name: Auto Release
 on:
   push:
     branches: [main]
-    paths: ['pyproject.toml']  # Only trigger when pyproject.toml changes
+    paths: ['pyproject.toml']
 
-# Every job then declares what it needs on top of this. Nothing here may run
-# third-party code and hold a credential it does not need: a job with
-# id-token: write can mint an OIDC token for PyPI, so anything executing a
-# build backend, an npm package or a Dockerfile stays in a job without it.
 permissions:
   contents: read
 
@@ -24,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          fetch-depth: 2  # Need to compare with previous commit
+          fetch-depth: 2
           persist-credentials: false
 
       - name: Set up uv
@@ -34,31 +30,23 @@ jobs:
 
       - name: Check if version was bumped
         id: check
+        shell: bash
         run: |
-          # Get current version
           CURRENT_VERSION=$(uv version | cut -d' ' -f2)
           echo "Current version: $CURRENT_VERSION"
 
-          # Get previous version from git (before this commit)
           git checkout HEAD~1 -- pyproject.toml || true
           PREVIOUS_VERSION=$(uv version | cut -d' ' -f2) 2>/dev/null || echo "0.0.0"
           git checkout HEAD -- pyproject.toml
           echo "Previous version: $PREVIOUS_VERSION"
 
-          # Check if version actually changed
           if [[ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]]; then
-            echo "✅ Version bump detected: $PREVIOUS_VERSION → $CURRENT_VERSION"
-            echo "should-release=true" >> $GITHUB_OUTPUT
-            echo "new-version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "should-release=true" >> "$GITHUB_OUTPUT"
+            echo "new-version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
           else
-            echo "ℹ️ No version change detected"
-            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "should-release=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # Builds the distributions without any publishing or administration
-  # credentials: the build backend is third-party code and must not run where
-  # it could reach the OIDC identity. Its output travels to the publishing job
-  # as an artifact.
   build:
     needs: check-version-bump
     if: needs.check-version-bump.outputs.should-release == 'true'
@@ -75,22 +63,14 @@ jobs:
         with:
           enable-cache: true
 
-      # build-constraints.txt pins the build backend to a hashed version, so a
-      # tampered setuptools release cannot slip into the distributions. The
-      # requirement in pyproject.toml stays a lower bound, because an exact pin
-      # there would be baked into every published sdist.
       - name: Build package distributions
         run: |
           uv build --no-sources --build-constraint build-constraints.txt --require-hashes
-          echo "Built package distributions:"
           ls -lh dist/
 
       - name: Optimize uv cache for CI
         run: uv cache prune --ci
 
-      # The upload is not the last thing the job does: a post step such as the
-      # uv cache save can still fail it. Artifacts are immutable, so overwrite
-      # keeps a retry from tripping over the one the failed attempt wrote.
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -100,20 +80,15 @@ jobs:
           overwrite: true
           retention-days: 7
 
-  # PyPI is the cutover-critical artifact: publish first so a failure in any
-  # later job (Docker build, MCPB pack) cannot leave the README pointing at a
-  # package version that does not exist yet.
-  #
-  # This job holds the OIDC identity of the project, so it runs no repository
-  # code: no checkout, no build, only the artifact download and the upload.
   publish-pypi:
     needs: [check-version-bump, build]
+    if: needs.check-version-bump.outputs.should-release == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/mcp-server-linkedin/${{ needs.check-version-bump.outputs.new-version }}/
+      url: https://pypi.org/project/artigence-linkedin-mcp/${{ needs.check-version-bump.outputs.new-version }}/
     permissions:
-      id-token: write  # Required for PyPI Trusted Publishing
+      id-token: write
     steps:
       - name: Download distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -128,11 +103,9 @@ jobs:
           verbose: true
           skip-existing: true
 
-  # Writes the released version into the repository and tags it. Runs nothing
-  # but checkout and the tools the runner ships with, so the admin token never
-  # shares a job with a package manager.
   prepare-release:
     needs: [check-version-bump, publish-pypi]
+    if: needs.check-version-bump.outputs.should-release == 'true'
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.check-version-bump.outputs.new-version }}
@@ -141,134 +114,55 @@ jobs:
     outputs:
       release-sha: ${{ steps.release-sha.outputs.release-sha }}
     steps:
-      # The only checkout that keeps its credentials: this job pushes the
-      # version commit and the tag. fetch-depth: 0 brings the existing tags in
-      # for the duplicate check below.
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 # zizmor: ignore[artipacked]
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
-      - name: Update manifest.json and docker-compose.yml version
+      - name: Update manifest.json version
+        shell: bash
         run: |
-          set -e
-          sed -i 's/"version": ".*"/"version": "'$VERSION'"/' manifest.json
-          sed -i 's/stickerdaniel\/linkedin-mcp-server:[^ ]*/stickerdaniel\/linkedin-mcp-server:'$VERSION'/' docker-compose.yml
-          echo "✅ Updated manifest.json and docker-compose.yml to version $VERSION"
+          python - <<'PY'
+          import json
+          from pathlib import Path
 
-      - name: Remove branch protection (temporary)
-        run: |
-          gh api repos/${{ github.repository }}/branches/main/protection \
-            --method DELETE
-        env:
-          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          version = "${{ env.VERSION }}"
+          manifest_path = Path("manifest.json")
+          manifest = json.loads(manifest_path.read_text())
+          manifest["version"] = version
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
 
-      - name: Commit version updates
+      - name: Commit manifest update
+        shell: bash
         run: |
-          set -e
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add manifest.json docker-compose.yml
+          git add manifest.json
           if git diff --staged --quiet; then
-            echo "ℹ️ No changes to commit"
+            echo "No manifest changes to commit"
           else
-            git commit -m "chore: update manifest.json and docker-compose.yml to v$VERSION [skip ci]"
+            git commit -m "chore: update manifest.json to v$VERSION [skip ci]"
             git push origin main
-            echo "✅ Committed version updates"
           fi
 
-      - name: Restore branch protection
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
-          PAYLOAD: >-
-            {
-              "required_status_checks": {
-                "strict": true,
-                "checks": [
-                  {"context": "lint-and-check", "app_id": 15368},
-                  {"context": "test", "app_id": 15368}
-                ]
-              },
-              "enforce_admins": true,
-              "required_pull_request_reviews": {
-                "dismiss_stale_reviews": false,
-                "require_code_owner_reviews": false,
-                "required_approving_review_count": 0
-              },
-              "restrictions": null
-            }
-        run: |
-          echo "$PAYLOAD" | gh api repos/${{ github.repository }}/branches/main/protection \
-            --method PUT \
-            --input -
-
       - name: Create release tag
+        shell: bash
         run: |
-          set -e
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
           if git tag -l "v$VERSION" | grep -q "v$VERSION"; then
-            echo "⚠️ Tag v$VERSION already exists, skipping tag creation"
+            echo "Tag v$VERSION already exists"
           else
             git tag "v$VERSION"
             git push origin "v$VERSION"
-            echo "✅ Created and pushed tag v$VERSION"
           fi
 
-      # The Docker image and the MCP bundle are built from the commit that
-      # carries the updated manifest.json and docker-compose.yml, so the jobs
-      # below check out this SHA instead of the one that triggered the run.
       - name: Publish the released commit
         id: release-sha
         run: echo "release-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-  docker:
-    needs: [check-version-bump, prepare-release]
-    runs-on: ubuntu-latest
-    env:
-      VERSION: ${{ needs.check-version-bump.outputs.new-version }}
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout released commit
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ needs.prepare-release.outputs.release-sha }}
-          persist-credentials: false
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push Docker images
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: .
-          push: true
-          tags: |
-            stickerdaniel/linkedin-mcp-server:${{ env.VERSION }}
-            stickerdaniel/linkedin-mcp-server:latest
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          repository: stickerdaniel/linkedin-mcp-server
-          readme-filepath: docs/docker-hub.md
-
   build-mcpb:
     needs: [check-version-bump, prepare-release]
+    if: needs.check-version-bump.outputs.should-release == 'true'
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.check-version-bump.outputs.new-version }}
@@ -286,33 +180,31 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Validate and build MCP bundle
+        shell: bash
         run: |
           bunx "@anthropic-ai/mcpb@$MCPB_VERSION" validate manifest.json
           bunx "@anthropic-ai/mcpb@$MCPB_VERSION" pack .
-          mv linkedin-mcp-server.mcpb linkedin-mcp-server-v$VERSION.mcpb
+          mv artigence-linkedin-mcp.mcpb artigence-linkedin-mcp-v$VERSION.mcpb
 
       - name: Generate release notes
+        shell: bash
         run: |
           envsubst < RELEASE_NOTES_TEMPLATE.md > RELEASE_NOTES.md
-          echo "✅ Generated release notes from template"
 
-      # Overwrites for the same reason as the distributions upload: the bun
-      # cache save runs after this and can fail the job around it.
       - name: Upload release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: github-release-assets
           path: |
-            linkedin-mcp-server-v${{ env.VERSION }}.mcpb
+            artigence-linkedin-mcp-v${{ env.VERSION }}.mcpb
             RELEASE_NOTES.md
           if-no-files-found: error
           overwrite: true
           retention-days: 7
 
-  # Waits for Docker so the release never announces an image that failed to
-  # push. Runs no repository code, only the artifact download and the release.
   create-github-release:
-    needs: [check-version-bump, docker, build-mcpb]
+    needs: [check-version-bump, build-mcpb]
+    if: needs.check-version-bump.outputs.should-release == 'true'
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.check-version-bump.outputs.new-version }}
@@ -339,8 +231,8 @@ jobs:
           body_path: RELEASE_NOTES.md
 
       - name: Summary
+        shell: bash
         run: |
           echo "Successfully released v$VERSION!"
-          echo "Docker: stickerdaniel/linkedin-mcp-server:$VERSION"
-          echo "PyPI: https://pypi.org/project/mcp-server-linkedin/$VERSION/"
+          echo "PyPI: https://pypi.org/project/artigence-linkedin-mcp/$VERSION/"
           echo "GitHub: https://github.com/${{ github.repository }}/releases/tag/v$VERSION"

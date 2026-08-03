@@ -29,7 +29,7 @@ from linkedin_mcp_server.session_state import (
     runtime_storage_state_path,
 )
 
-ISSUE_URL = "https://github.com/stickerdaniel/linkedin-mcp-server/issues/new/choose"
+ISSUE_URL = "https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/issues/new/choose"
 ISSUE_TITLE_PREFIX = "[BUG]"
 ISSUE_SEARCH_API = "https://api.github.com/search/issues"
 
@@ -366,7 +366,7 @@ def _installation_method_lines(runtime: dict[str, Any]) -> list[str]:
     docker_checked = "x" if "container" in current_runtime_id else " "
     managed_checked = " " if "container" in current_runtime_id else "x"
     return [
-        f"- [{docker_checked}] Docker (specify docker image version/tag): `stickerdaniel/linkedin-mcp-server:<version-or-latest>` with `~/.linkedin-mcp` mounted into `/home/pwuser/.linkedin-mcp`",
+        f"- [{docker_checked}] Docker (if you publish an image for this fork): `ghcr.io/artigencehealthcaresystems/linkedin-mcp-server:<version-or-latest>` with `~/.linkedin-mcp` mounted into `/home/pwuser/.linkedin-mcp`",
         f"- [{managed_checked}] Managed runtime (Claude Desktop MCP Bundle, `uvx`, or local `uv run` setup)",
     ]
 
@@ -375,7 +375,7 @@ def _installation_method_summary(runtime: dict[str, Any]) -> str:
     current_runtime_id = str(runtime.get("current_runtime_id") or "")
     if "container" in current_runtime_id:
         return (
-            "Docker using `stickerdaniel/linkedin-mcp-server:<version-or-latest>` with "
+            "Docker using `ghcr.io/artigencehealthcaresystems/linkedin-mcp-server:<version-or-latest>` with "
             "`~/.linkedin-mcp` mounted into `/home/pwuser/.linkedin-mcp`"
         )
     return "Managed runtime (Claude Desktop MCP Bundle, `uvx`, or local `uv run` setup)"
@@ -419,4 +419,4 @@ def _issue_search_query(payload: dict[str, Any]) -> str:
     else:
         section = payload.get("section_name") or "scrape"
         summary = f'"{section}"'
-    return f"repo:stickerdaniel/linkedin-mcp-server is:issue is:open {summary}"
+    return f"repo:ArtigenceHealthcareSystems/linkedin-mcp-server is:issue is:open {summary}"

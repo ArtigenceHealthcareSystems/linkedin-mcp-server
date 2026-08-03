@@ -450,7 +450,7 @@ class TestStateLocation:
             home.symlink_to(real, target_is_directory=True)
         else:
             home.mkdir()
-            application = home / ".mcp-server-linkedin"
+            application = home / ".artigence-linkedin-mcp"
             if depth == "application":
                 application.symlink_to(real, target_is_directory=True)
             else:

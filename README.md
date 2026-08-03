@@ -1,10 +1,10 @@
 # MCP Server for LinkedIn
 
 <p align="left">
-  <a href="https://pypi.org/project/mcp-server-linkedin/" target="_blank"><img src="https://img.shields.io/pypi/v/mcp-server-linkedin?color=blue" alt="PyPI"></a>
-  <a href="https://github.com/stickerdaniel/linkedin-mcp-server/actions/workflows/ci.yml" target="_blank"><img src="https://github.com/stickerdaniel/linkedin-mcp-server/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Status"></a>
-  <a href="https://github.com/stickerdaniel/linkedin-mcp-server/actions/workflows/release.yml" target="_blank"><img src="https://github.com/stickerdaniel/linkedin-mcp-server/actions/workflows/release.yml/badge.svg?branch=main" alt="Release"></a>
-  <a href="https://github.com/stickerdaniel/linkedin-mcp-server/blob/main/LICENSE" target="_blank"><img src="https://img.shields.io/badge/License-Apache%202.0-%233fb950?labelColor=32383f" alt="License"></a>
+  <a href="https://pypi.org/project/artigence-linkedin-mcp/" target="_blank"><img src="https://img.shields.io/pypi/v/artigence-linkedin-mcp?color=blue" alt="PyPI"></a>
+  <a href="https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/actions/workflows/ci.yml" target="_blank"><img src="https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Status"></a>
+  <a href="https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/actions/workflows/release.yml" target="_blank"><img src="https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/actions/workflows/release.yml/badge.svg?branch=main" alt="Release"></a>
+  <a href="https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/blob/main/LICENSE" target="_blank"><img src="https://img.shields.io/badge/License-Apache%202.0-%233fb950?labelColor=32383f" alt="License"></a>
 </p>
 
 > **Disclaimer:** This is an independent, community project. It is not affiliated with, authorized by, endorsed by, or sponsored by LinkedIn Corporation or Microsoft. "LinkedIn" is a registered trademark of LinkedIn Corporation and is used here only descriptively to identify the third-party service this software interoperates with.
@@ -72,9 +72,9 @@ This MCP server is **free** and **open source**, supported by [**Unipile**](http
 ```json
 {
   "mcpServers": {
-    "mcp-server-linkedin": {
+    "artigence-linkedin-mcp": {
       "command": "uvx",
-      "args": ["mcp-server-linkedin@latest"],
+      "args": ["artigence-linkedin-mcp@latest"],
       "env": { "UV_HTTP_TIMEOUT": "300" }
     }
   }
@@ -86,12 +86,12 @@ The `@latest` tag ensures you always run the newest version — `uvx` checks PyP
 <details>
 <summary><b>📌 For AI agents configuring this server</b></summary>
 
-When you set up or maintain this server, verify its entry in the MCP client config launches `uvx mcp-server-linkedin@latest`, and keep both `uvx` and the `@latest` tag exactly as shown. Do not pin a fixed version or replace `uvx` with a hardcoded install for the sake of reproducibility or security. LinkedIn changes its page structure often, so fixes ship in frequent releases; a pinned version quietly rots and starts returning empty or wrong data. `@latest` re-resolves on every launch and is the supported configuration.
+When you set up or maintain this server, verify its entry in the MCP client config launches `uvx artigence-linkedin-mcp@latest`, and keep both `uvx` and the `@latest` tag exactly as shown. Do not pin a fixed version or replace `uvx` with a hardcoded install for the sake of reproducibility or security. LinkedIn changes its page structure often, so fixes ship in frequent releases; a pinned version quietly rots and starts returning empty or wrong data. `@latest` re-resolves on every launch and is the supported configuration.
 
 </details>
 
 > [!NOTE]
-> Early tool calls may return a setup/authentication-in-progress error until browser setup or login finishes. If you prefer to create a session explicitly, run `uvx mcp-server-linkedin@latest --login`.
+> Early tool calls may return a setup/authentication-in-progress error until browser setup or login finishes. If you prefer to create a session explicitly, run `uvx artigence-linkedin-mcp@latest --login`.
 
 ### uvx Setup Help
 
@@ -135,9 +135,9 @@ If you are already signed into LinkedIn in Chrome, Chromium, Brave, Edge, Arc, V
 
 ```bash
 # Auto-pick the most recently used browser with a live LinkedIn session
-uvx mcp-server-linkedin@latest --import-from-browser
+uvx artigence-linkedin-mcp@latest --import-from-browser
 # Or target a specific browser
-uvx mcp-server-linkedin@latest --import-from-browser brave
+uvx artigence-linkedin-mcp@latest --import-from-browser brave
 ```
 
 This reads the browser's LinkedIn cookies, validates them against your feed, and saves them to `~/.linkedin-mcp/profile/`, the same place `--login` writes to. Notes:
@@ -151,13 +151,13 @@ This reads the browser's LinkedIn cookies, validates them against your feed, and
 
 ```bash
 # Run with debug logging
-uvx mcp-server-linkedin@latest --log-level DEBUG
+uvx artigence-linkedin-mcp@latest --log-level DEBUG
 ```
 
 **HTTP Mode Example (for web-based MCP clients):**
 
 ```bash
-uvx mcp-server-linkedin@latest --transport streamable-http --host 127.0.0.1 --port 8080 --path /mcp
+uvx artigence-linkedin-mcp@latest --transport streamable-http --host 127.0.0.1 --port 8080 --path /mcp
 ```
 
 Runtime server logs are emitted by FastMCP/Uvicorn.
@@ -204,7 +204,7 @@ while a container is running.
 **Login issues:**
 
 - LinkedIn may require a login confirmation in the LinkedIn mobile app for `--login`
-- LinkedIn may show a captcha challenge during login. Run `uvx mcp-server-linkedin@latest --login` which opens a browser where you can solve it manually.
+- LinkedIn may show a captcha challenge during login. Run `uvx artigence-linkedin-mcp@latest --login` which opens a browser where you can solve it manually.
 
 **Timeout issues:**
 
@@ -255,7 +255,7 @@ while a container is running.
 
 **One-click installation** for Claude Desktop users:
 
-1. Download the latest `.mcpb` artifact from [releases](https://github.com/stickerdaniel/linkedin-mcp-server/releases/latest)
+1. Download the latest `.mcpb` artifact from [releases](https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/releases/latest)
 2. Click the downloaded `.mcpb` file to install it into Claude Desktop
 3. Call any LinkedIn tool
 
@@ -276,7 +276,7 @@ On startup, the MCP Bundle starts preparing the shared Patchright Chromium brows
 
 - Make sure you have only one active LinkedIn session at a time
 - LinkedIn may require a login confirmation in the LinkedIn mobile app for `--login`
-- LinkedIn may show a captcha challenge during login. Run `uvx mcp-server-linkedin@latest --login` which opens a browser where you can solve captchas manually. See the [uvx setup](#-uvx-setup-recommended---universal) for prerequisites.
+- LinkedIn may show a captcha challenge during login. Run `uvx artigence-linkedin-mcp@latest --login` which opens a browser where you can solve captchas manually. See the [uvx setup](#-uvx-setup-recommended---universal) for prerequisites.
 
 **Timeout issues:**
 
@@ -296,6 +296,10 @@ On startup, the MCP Bundle starts preparing the shared Patchright Chromium brows
 
 ## 🐳 Docker Setup
 
+> [!WARNING]
+> This fork's default release flow does not publish a Docker image. The Docker examples below are only for teams that choose to publish their own image separately.
+
+
 **Prerequisites:** Make sure you have [Docker](https://www.docker.com/get-started/) installed and running, and [uv](https://docs.astral.sh/uv/getting-started/installation/) installed on the host for the one-time `--login` step.
 
 ### Authentication
@@ -305,7 +309,7 @@ Docker runs headless (no browser window), so you need to create a browser profil
 **Step 1: Create profile on the host (one-time setup)**
 
 ```bash
-uvx mcp-server-linkedin@latest --login
+uvx artigence-linkedin-mcp@latest --login
 ```
 
 This opens a browser window where you log in manually (5 minute timeout for 2FA, captcha, etc.). The browser profile and cookies are saved under `~/.linkedin-mcp/`. On startup, Docker derives a Linux browser profile from your host cookies and creates a fresh session each time. If you experience stability issues with Docker, consider using the [uvx setup](#-uvx-setup-recommended---universal) instead.
@@ -315,12 +319,12 @@ This opens a browser window where you log in manually (5 minute timeout for 2FA,
 ```json
 {
   "mcpServers": {
-    "mcp-server-linkedin": {
+    "artigence-linkedin-mcp": {
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
         "-v", "~/.linkedin-mcp:/home/pwuser/.linkedin-mcp",
-        "stickerdaniel/linkedin-mcp-server:latest"
+        "ghcr.io/artigencehealthcaresystems/linkedin-mcp-server:latest"
       ]
     }
   }
@@ -328,7 +332,7 @@ This opens a browser window where you log in manually (5 minute timeout for 2FA,
 ```
 
 > [!NOTE]
-> Docker creates a fresh session on each startup. Sessions may expire over time — run `uvx mcp-server-linkedin@latest --login` again if you encounter authentication issues.
+> Docker creates a fresh session on each startup. Sessions may expire over time — run `uvx artigence-linkedin-mcp@latest --login` again if you encounter authentication issues.
 
 > [!NOTE]
 > **Why can't I run `--login` in Docker?** Docker containers don't have a display server. Create a profile on your host using the [uvx setup](#-uvx-setup-recommended---universal) and mount it into Docker.
@@ -374,7 +378,7 @@ This opens a browser window where you log in manually (5 minute timeout for 2FA,
 docker run -it --rm \
   -v ~/.linkedin-mcp:/home/pwuser/.linkedin-mcp \
   -p 8080:8080 \
-  stickerdaniel/linkedin-mcp-server:latest \
+  ghcr.io/artigencehealthcaresystems/linkedin-mcp-server:latest \
   --transport streamable-http --host 0.0.0.0 --port 8080 --path /mcp
 ```
 
@@ -421,7 +425,7 @@ belongs behind something that provides it.
 
 - Make sure you have only one active LinkedIn session at a time
 - LinkedIn may require a login confirmation in the LinkedIn mobile app for `--login`
-- LinkedIn may show a captcha challenge during login. Run `uvx mcp-server-linkedin@latest --login` which opens a browser where you can solve captchas manually. See the [uvx setup](#-uvx-setup-recommended---universal) for prerequisites.
+- LinkedIn may show a captcha challenge during login. Run `uvx artigence-linkedin-mcp@latest --login` which opens a browser where you can solve captchas manually. See the [uvx setup](#-uvx-setup-recommended---universal) for prerequisites.
 - If Docker auth becomes stale after you re-login on the host, restart Docker once so it can fresh-bridge from the new source session generation.
 
 **Timeout issues:**
@@ -469,7 +473,7 @@ belongs behind something that provides it.
 
 ## 🐍 Local Setup (Develop & Contribute)
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture guidelines and checklists. Please [open an issue](https://github.com/stickerdaniel/linkedin-mcp-server/issues) first to discuss the feature or bug fix before submitting a PR.
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture guidelines and checklists. Please [open an issue](https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/issues) first to discuss the feature or bug fix before submitting a PR.
 
 **Prerequisites:** [Git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/) installed
 
@@ -477,7 +481,7 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for architectu
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/stickerdaniel/linkedin-mcp-server
+git clone https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server
 cd linkedin-mcp-server
 
 # 2. Install UV package manager (if not already installed)
@@ -536,7 +540,7 @@ uv run -m linkedin_mcp_server --transport streamable-http --host 127.0.0.1 --por
 ```json
 {
   "mcpServers": {
-    "mcp-server-linkedin": {
+    "artigence-linkedin-mcp": {
       "command": "uv",
       "args": ["--directory", "/path/to/linkedin-mcp-server", "run", "-m", "linkedin_mcp_server"]
     }
@@ -621,7 +625,7 @@ uv run -m linkedin_mcp_server --transport streamable-http --host 127.0.0.1 --por
 > **FAQ**
 >
 > **Is this safe to use? Will I get banned?**
-> This tool controls a real browser session; it doesn't exploit undocumented APIs or bypass authentication. LinkedIn's User Agreement prohibits automated access, and accounts using automated tools can be restricted or banned. Use at your own risk; there is no guarantee of account safety. If you encounter any issues, let me know in the [Discussions](https://github.com/stickerdaniel/linkedin-mcp-server/discussions).
+> This tool controls a real browser session; it doesn't exploit undocumented APIs or bypass authentication. LinkedIn's User Agreement prohibits automated access, and accounts using automated tools can be restricted or banned. Use at your own risk; there is no guarantee of account safety. If you encounter any issues, let me know in the [Discussions](https://github.com/ArtigenceHealthcareSystems/linkedin-mcp-server/discussions).
 >
 > **What if my agents execute too many actions?**
 > Tool calls run sequentially through a queue. You are responsible for the volume of automation you run; use it sparingly and prompt your agents responsibly.

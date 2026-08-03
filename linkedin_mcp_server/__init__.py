@@ -25,10 +25,13 @@ Architecture:
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("mcp-server-linkedin")
+    __version__ = version("artigence-linkedin-mcp")
 except PackageNotFoundError:
     try:
-        # Fallback for environments installed under the pre-rename name
-        __version__ = version("linkedin-scraper-mcp")
+        # Fallbacks for environments installed under earlier package names.
+        __version__ = version("mcp-server-linkedin")
     except PackageNotFoundError:
-        __version__ = "0.0.0.dev"  # Running from source without install
+        try:
+            __version__ = version("linkedin-scraper-mcp")
+        except PackageNotFoundError:
+            __version__ = "0.0.0.dev"  # Running from source without install

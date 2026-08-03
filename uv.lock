@@ -1039,7 +1039,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mcp-server-linkedin"
+name = "artigence-linkedin-mcp"
 version = "4.20.1"
 source = { editable = "." }
 dependencies = [

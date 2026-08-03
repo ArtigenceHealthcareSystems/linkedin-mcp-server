@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Tests: `uv run pytest` (with coverage: `uv run pytest --cov`)
 - Pre-commit: `uv run pre-commit install` then `uv run pre-commit run --all-files`
 - Run server locally: `uv run -m linkedin_mcp_server --no-headless`
-- Run via uvx (PyPI/package verification only): `uvx mcp-server-linkedin`
+- Run via uvx (PyPI/package verification only): `uvx artigence-linkedin-mcp`
 - Docker build: `docker build -t linkedin-mcp-server .`
 - Install browser: `uv run patchright install chromium`
 
@@ -91,7 +91,7 @@ gt create -m "chore: Bump version to X.Y.Z"
 gt submit                        # merge PR to trigger release workflow
 ```
 
-The CI release workflow automatically updates `manifest.json` and `docker-compose.yml` with the new version — do not update them manually.
+The CI release workflow automatically updates `manifest.json` with the released version. `docker-compose.yml` is no longer part of the default release path for this fork.
 
 After the workflow completes, file a PR in the MCP registry to update the version.
 
