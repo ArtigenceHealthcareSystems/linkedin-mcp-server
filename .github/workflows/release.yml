@@ -185,7 +185,7 @@ jobs:
         run: |
           bunx "@anthropic-ai/mcpb@$MCPB_VERSION" validate manifest.json
           bunx "@anthropic-ai/mcpb@$MCPB_VERSION" pack .
-          mv artigence-linkedin-mcp.mcpb artigence-linkedin-mcp-v$VERSION.mcpb
+          mv linkedin-mcp-server.mcpb artigence-linkedin-mcp-v$VERSION.mcpb
 
       - name: Generate release notes
         shell: bash
