@@ -56,6 +56,10 @@
       "description": "Get the authenticated user's own LinkedIn profile with optional section selection (experience, education, skills, etc.)"
     },
     {
+      "name": "get_connections",
+      "description": "List the authenticated user's 1st-degree connections sorted by recently added, including names, profile URLs, and headlines"
+    },
+    {
       "name": "connect_with_person",
       "description": "Send a connection request or accept an incoming one, with optional note"
     },

@@ -98,6 +98,13 @@ def rate_limited_section_error() -> dict[str, str]:
 _PAGE_SIZE = 25
 
 _SAVED_JOBS_URL = "https://www.linkedin.com/my-items/saved-jobs/"
+_CONNECTIONS_URL = "https://www.linkedin.com/mynetwork/invite-connect/connections/"
+_CONNECTIONS_SORT_TYPE = "RECENTLY_ADDED"
+_CONNECTIONS_PAGE_SIZE = 40
+_CONNECTIONS_REFERENCES_CAP = 50
+_CONNECTIONS_DECORATION_ID = (
+    "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-15"
+)
 
 # The my-items lists page in 10s, unlike job search. Verified live: ?start=10
 # returns the 11th saved job, while ?start=25 lands past the end of a two-page
@@ -488,6 +495,15 @@ class ExtractedSection:
     text: str
     references: list[Reference]
     error: dict[str, Any] | None = None
+
+
+@dataclass
+class ConnectionEntry:
+    """Structured connection row returned by ``get_connections``."""
+
+    full_name: str
+    linkedin_url: str
+    headline: str
 
 
 _FEED_RSC_MARKER = "sduiid=com.linkedin.sdui.pagers.feed.mainFeed"
@@ -3020,6 +3036,275 @@ class LinkedInExtractor:
             result["references"] = references
         if section_errors:
             result["section_errors"] = section_errors
+        return result
+
+    @staticmethod
+    def _build_connections_page_url(start: int = 0) -> str:
+        """Build the authenticated connections page URL with recent sorting."""
+        del start
+        return f"{_CONNECTIONS_URL}?sortType={_CONNECTIONS_SORT_TYPE}"
+
+    @staticmethod
+    def _format_connections_text(connections: list[ConnectionEntry]) -> str:
+        """Render connections into compact raw text for MCP clients."""
+        blocks = []
+        for connection in connections:
+            lines = [connection.full_name]
+            if connection.headline:
+                lines.append(connection.headline)
+            lines.append(connection.linkedin_url)
+            blocks.append("\n".join(lines))
+        return "\n---\n".join(blocks)
+
+    async def _fetch_connections_page(self, start: int) -> dict[str, Any]:
+        """Fetch one connections API page from the authenticated browser session."""
+        return await self._page.evaluate(
+            r"""async ({ start, count, sortType, decorationId }) => {
+                const makeError = (errorType, errorMessage, status = null) => ({
+                    ok: false,
+                    error_type: errorType,
+                    error_message: errorMessage,
+                    status,
+                });
+                const getCookie = name => {
+                    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const match = document.cookie.match(
+                        new RegExp('(?:^|;\\s*)' + escaped + '=([^;]*)')
+                    );
+                    return match ? decodeURIComponent(match[1]) : null;
+                };
+                const csrfToken = (getCookie('JSESSIONID') || '').replace(/^\"|\"$/g, '');
+                const url = new URL(
+                    'https://www.linkedin.com/voyager/api/relationships/dash/connections'
+                );
+                url.searchParams.set('q', 'search');
+                url.searchParams.set('start', String(start));
+                url.searchParams.set('count', String(count));
+                url.searchParams.set('sortType', sortType);
+                url.searchParams.set('decorationId', decorationId);
+
+                let response;
+                try {
+                    response = await fetch(url.toString(), {
+                        credentials: 'include',
+                        headers: {
+                            'accept': 'application/json',
+                            'csrf-token': csrfToken,
+                            'x-restli-protocol-version': '2.0.0',
+                        },
+                    });
+                } catch (error) {
+                    return makeError(
+                        'network_error',
+                        error instanceof Error ? error.message : String(error)
+                    );
+                }
+
+                if (response.status === 401 || response.status === 403) {
+                    return makeError(
+                        'authentication_error',
+                        'LinkedIn rejected the connections request. Your session may need to be refreshed.',
+                        response.status,
+                    );
+                }
+                if (!response.ok) {
+                    const body = await response.text().catch(() => '');
+                    return makeError(
+                        'http_error',
+                        body || `LinkedIn returned HTTP ${response.status}`,
+                        response.status,
+                    );
+                }
+
+                const data = await response.json().catch(() => null);
+                if (!data || typeof data !== 'object') {
+                    return makeError(
+                        'parse_error',
+                        'LinkedIn returned an unreadable connections payload.',
+                        response.status,
+                    );
+                }
+                return {
+                    ok: true,
+                    data,
+                    request_url: url.toString(),
+                };
+            }""",
+            {
+                "start": start,
+                "count": _CONNECTIONS_PAGE_SIZE,
+                "sortType": _CONNECTIONS_SORT_TYPE,
+                "decorationId": _CONNECTIONS_DECORATION_ID,
+            },
+        )
+
+    @staticmethod
+    def _normalize_connection_entry(raw: dict[str, Any]) -> ConnectionEntry | None:
+        """Extract the public connection fields the tool returns."""
+
+        def _walk(value: Any) -> list[dict[str, Any]]:
+            found: list[dict[str, Any]] = []
+            if isinstance(value, dict):
+                found.append(value)
+                for nested in value.values():
+                    found.extend(_walk(nested))
+            elif isinstance(value, list):
+                for nested in value:
+                    found.extend(_walk(nested))
+            return found
+
+        candidates = _walk(raw)
+        profile: dict[str, Any] | None = None
+        for candidate in candidates:
+            public_identifier = candidate.get("publicIdentifier")
+            if isinstance(public_identifier, str) and public_identifier.strip():
+                profile = candidate
+                break
+        if profile is None:
+            return None
+
+        first_name = str(profile.get("firstName") or "").strip()
+        last_name = str(profile.get("lastName") or "").strip()
+        full_name = f"{first_name} {last_name}".strip()
+        if not full_name:
+            full_name = str(profile.get("name") or "").strip()
+        public_identifier = str(profile.get("publicIdentifier") or "").strip()
+        if not full_name or not public_identifier:
+            return None
+
+        headline = ""
+        for key in ("headline", "occupation", "summary", "subtitle"):
+            value = profile.get(key)
+            if isinstance(value, str) and value.strip():
+                headline = value.strip()
+                break
+
+        return ConnectionEntry(
+            full_name=full_name,
+            linkedin_url=f"https://www.linkedin.com/in/{public_identifier}/",
+            headline=headline,
+        )
+
+    async def get_connections(self, max_pages: int = 25) -> dict[str, Any]:
+        """List the authenticated user's 1st-degree connections.
+
+        Navigates to the connections page so LinkedIn serves the authenticated
+        surface, then paginates the same-session connections API with
+        ``sortType=RECENTLY_ADDED`` until no new connections remain.
+
+        Args:
+            max_pages: Maximum API pages to load (1-25, default 25).
+
+        Returns:
+            {url, sections: {connections: text}, references: {connections: [...]},
+             connections: [{full_name, linkedin_url, headline}]}
+        """
+        base_url = self._build_connections_page_url()
+        await self._navigate_to_page(base_url)
+        await detect_rate_limit(self._page)
+        await self._wait_for_main_text(log_context="Connections page")
+        await handle_modal_close(self._page)
+
+        all_connections: list[ConnectionEntry] = []
+        seen_urls: set[str] = set()
+        section_errors: dict[str, dict[str, Any]] = {}
+        request_url = base_url
+
+        for page_num in range(max_pages):
+            start = page_num * _CONNECTIONS_PAGE_SIZE
+            try:
+                page_data = await self._fetch_connections_page(start)
+            except Exception as e:
+                section_errors["connections"] = build_issue_diagnostics(
+                    e,
+                    context="get_connections",
+                    target_url=self._build_connections_page_url(start),
+                    section_name="connections",
+                )
+                break
+
+            request_url = str(page_data.get("request_url") or request_url)
+            if not page_data.get("ok"):
+                error_type = str(page_data.get("error_type") or "request_failed")
+                error_message = str(
+                    page_data.get("error_message")
+                    or "LinkedIn did not return a usable connections payload."
+                )
+                status = page_data.get("status")
+                if error_type == "authentication_error":
+                    raise AuthenticationError(error_message)
+                section_errors["connections"] = {
+                    "error_type": error_type,
+                    "error_message": error_message,
+                }
+                if status is not None:
+                    section_errors["connections"]["status"] = status
+                break
+
+            data = page_data.get("data")
+            if not isinstance(data, dict):
+                section_errors["connections"] = {
+                    "error_type": "parse_error",
+                    "error_message": "LinkedIn returned an unreadable connections payload.",
+                }
+                break
+
+            elements = data.get("elements")
+            if not isinstance(elements, list):
+                section_errors["connections"] = {
+                    "error_type": "parse_error",
+                    "error_message": "LinkedIn returned a connections payload without an elements list.",
+                }
+                break
+
+            new_connections = 0
+            for raw in elements:
+                if not isinstance(raw, dict):
+                    continue
+                entry = self._normalize_connection_entry(raw)
+                if entry is None or entry.linkedin_url in seen_urls:
+                    continue
+                seen_urls.add(entry.linkedin_url)
+                all_connections.append(entry)
+                new_connections += 1
+
+            if new_connections == 0 or len(elements) < _CONNECTIONS_PAGE_SIZE:
+                break
+
+            if page_num + 1 < max_pages:
+                await asyncio.sleep(_NAV_DELAY)
+
+        references = [
+            {"kind": "person", "url": urlparse(entry.linkedin_url).path, "text": entry.full_name, "context": "connection"}
+            for entry in all_connections
+        ]
+        result: dict[str, Any] = {
+            "url": base_url,
+            "sections": {},
+            "connections": [
+                {
+                    "full_name": entry.full_name,
+                    "linkedin_url": entry.linkedin_url,
+                    "headline": entry.headline,
+                }
+                for entry in all_connections
+            ],
+        }
+        if all_connections:
+            result["sections"]["connections"] = self._format_connections_text(
+                all_connections
+            )
+        if references:
+            result["references"] = {
+                "connections": dedupe_references(
+                    references,
+                    cap=_CONNECTIONS_REFERENCES_CAP,
+                )
+            }
+        if section_errors:
+            result["section_errors"] = section_errors
+        if request_url != base_url:
+            result["api_url"] = request_url
         return result
 
     async def scrape_job(self, job_id: str) -> dict[str, Any]:

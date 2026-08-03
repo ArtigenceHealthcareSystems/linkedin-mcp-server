@@ -77,7 +77,7 @@ async def handle_auth_error(
     every tool body, so a failure there means nothing has been scraped. The 18
     catch sites in the tool bodies leave it at the default, because by then the
     scrape may be part done, and some of these tools send messages and connection
-    requests. A 19th added later is non-replayable until someone says otherwise,
+    requests. Any tool added later is non-replayable until someone says otherwise,
     which is the safe direction for a default to point.
     """
     if get_runtime_policy() == RuntimePolicy.DOCKER:
