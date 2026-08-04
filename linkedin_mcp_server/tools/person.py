@@ -377,13 +377,14 @@ def register_person_tools(
     async def get_connections(
         ctx: Context,
         max_pages: Annotated[int, Field(ge=1, le=25)] = 25,
+        oldest_connected_on: Annotated[str | None, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")] = None,
         extractor: Any | None = None,
     ) -> dict[str, Any]:
         """
         List the authenticated user's 1st-degree LinkedIn connections.
 
         Opens the My Network connections page, uses LinkedIn's own
-        RECENTLY_ADDED ordering, and paginates through the full connection list.
+        RECENTLY_ADDED ordering, and paginates through the connection list.
         Returns both raw text for LLM parsing and a structured connections array.
 
         Args:
@@ -391,23 +392,34 @@ def register_person_tools(
             max_pages: Maximum connections pages to load (1-25, default 25).
                 LinkedIn's own connections view is capped at 1000 results, so
                 25 pages at 40 connections each covers the full visible set.
+            oldest_connected_on: Optional oldest allowed connection date in
+                ``YYYY-MM-DD`` format. When set, pagination stops after the
+                first page containing rows older than this date.
 
         Returns:
             Dict with url, sections (connections -> raw text), optional
-            references, and a connections list containing full_name,
-            linkedin_url, headline, and connected_on for each connection.
+            references, pages_fetched, stop_reason, and a connections list
+            containing full_name, linkedin_url, headline, and connected_on
+            for each connection.
         """
         try:
             extractor = extractor or await get_ready_extractor(
                 ctx, tool_name="get_connections"
             )
-            logger.info("Fetching connections (max_pages=%d)", max_pages)
+            logger.info(
+                "Fetching connections (max_pages=%d, oldest_connected_on=%s)",
+                max_pages,
+                oldest_connected_on,
+            )
 
             await ctx.report_progress(
                 progress=0, total=100, message="Loading connections"
             )
 
-            result = await extractor.get_connections(max_pages=max_pages)
+            result = await extractor.get_connections(
+                max_pages=max_pages,
+                oldest_connected_on=oldest_connected_on,
+            )
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 

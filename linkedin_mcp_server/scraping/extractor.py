@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import json
 import logging
 import re
@@ -3098,6 +3098,14 @@ class LinkedInExtractor:
                     return normalized
         return None
 
+    @staticmethod
+    def _parse_connection_cutoff(oldest_connected_on: str | None) -> date | None:
+        """Parse the oldest allowed connection date for early-stop pagination."""
+
+        if oldest_connected_on is None:
+            return None
+        return date.fromisoformat(oldest_connected_on)
+
     async def _fetch_connections_page(self, start: int) -> dict[str, Any]:
         """Fetch one connections API page from the authenticated browser session."""
         return await self._page.evaluate(
@@ -3228,7 +3236,11 @@ class LinkedInExtractor:
             connected_on=cls._extract_connection_date(raw),
         )
 
-    async def get_connections(self, max_pages: int = 25) -> dict[str, Any]:
+    async def get_connections(
+        self,
+        max_pages: int = 25,
+        oldest_connected_on: str | None = None,
+    ) -> dict[str, Any]:
         """List the authenticated user's 1st-degree connections.
 
         Navigates to the connections page so LinkedIn serves the authenticated
@@ -3237,11 +3249,16 @@ class LinkedInExtractor:
 
         Args:
             max_pages: Maximum API pages to load (1-25, default 25).
+            oldest_connected_on: Optional oldest allowed ``YYYY-MM-DD`` date.
+                When present, pagination stops after the first page that contains
+                rows older than this date because LinkedIn returns the list in
+                reverse chronological order.
 
         Returns:
             {url, sections: {connections: text}, references: {connections: [...]},
              connections: [{full_name, linkedin_url, headline, connected_on}]}
         """
+        cutoff_date = self._parse_connection_cutoff(oldest_connected_on)
         base_url = self._build_connections_page_url()
         await self._navigate_to_page(base_url)
         await detect_rate_limit(self._page)
@@ -3252,6 +3269,8 @@ class LinkedInExtractor:
         seen_urls: set[str] = set()
         section_errors: dict[str, dict[str, Any]] = {}
         request_url = base_url
+        pages_fetched = 0
+        stop_reason = "max_pages_reached"
 
         for page_num in range(max_pages):
             start = page_num * _CONNECTIONS_PAGE_SIZE
@@ -3264,8 +3283,10 @@ class LinkedInExtractor:
                     target_url=self._build_connections_page_url(start),
                     section_name="connections",
                 )
+                stop_reason = "fetch_error"
                 break
 
+            pages_fetched += 1
             request_url = str(page_data.get("request_url") or request_url)
             if not page_data.get("ok"):
                 error_type = str(page_data.get("error_type") or "request_failed")
@@ -3282,6 +3303,7 @@ class LinkedInExtractor:
                 }
                 if status is not None:
                     section_errors["connections"]["status"] = status
+                stop_reason = error_type
                 break
 
             data = page_data.get("data")
@@ -3290,6 +3312,7 @@ class LinkedInExtractor:
                     "error_type": "parse_error",
                     "error_message": "LinkedIn returned an unreadable connections payload.",
                 }
+                stop_reason = "parse_error"
                 break
 
             elements = data.get("elements")
@@ -3298,20 +3321,37 @@ class LinkedInExtractor:
                     "error_type": "parse_error",
                     "error_message": "LinkedIn returned a connections payload without an elements list.",
                 }
+                stop_reason = "parse_error"
                 break
 
             new_connections = 0
+            older_than_cutoff_found = False
             for raw in elements:
                 if not isinstance(raw, dict):
                     continue
                 entry = self._normalize_connection_entry(raw)
                 if entry is None or entry.linkedin_url in seen_urls:
                     continue
+                if cutoff_date is not None and entry.connected_on:
+                    try:
+                        entry_date = date.fromisoformat(entry.connected_on)
+                    except ValueError:
+                        entry_date = None
+                    if entry_date is not None and entry_date < cutoff_date:
+                        older_than_cutoff_found = True
+                        break
                 seen_urls.add(entry.linkedin_url)
                 all_connections.append(entry)
                 new_connections += 1
 
-            if new_connections == 0 or len(elements) < _CONNECTIONS_PAGE_SIZE:
+            if older_than_cutoff_found:
+                stop_reason = "older_than_cutoff"
+                break
+            if new_connections == 0:
+                stop_reason = "no_new_connections"
+                break
+            if len(elements) < _CONNECTIONS_PAGE_SIZE:
+                stop_reason = "last_page"
                 break
 
             if page_num + 1 < max_pages:
@@ -3333,6 +3373,8 @@ class LinkedInExtractor:
                 }
                 for entry in all_connections
             ],
+            "pages_fetched": pages_fetched,
+            "stop_reason": stop_reason,
         }
         if all_connections:
             result["sections"]["connections"] = self._format_connections_text(

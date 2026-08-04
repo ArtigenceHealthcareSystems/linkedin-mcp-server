@@ -994,7 +994,10 @@ class TestGetConnectionsTool:
         result = await tool_fn(mock_context, extractor=mock_extractor)
         assert "connections" in result["sections"]
         assert result["connections"][0]["full_name"] == "Jane Doe"
-        mock_extractor.get_connections.assert_awaited_once_with(max_pages=25)
+        mock_extractor.get_connections.assert_awaited_once_with(
+            max_pages=25,
+            oldest_connected_on=None,
+        )
 
     async def test_get_connections_passes_max_pages(self, mock_context):
         expected = {
@@ -1011,7 +1014,10 @@ class TestGetConnectionsTool:
 
         tool_fn = await get_tool_fn(mcp, "get_connections")
         await tool_fn(mock_context, max_pages=3, extractor=mock_extractor)
-        mock_extractor.get_connections.assert_awaited_once_with(max_pages=3)
+        mock_extractor.get_connections.assert_awaited_once_with(
+            max_pages=3,
+            oldest_connected_on=None,
+        )
 
     async def test_get_connections_rejects_zero_max_pages(self, mock_context):
         from fastmcp.exceptions import ValidationError
@@ -1023,6 +1029,45 @@ class TestGetConnectionsTool:
 
         with pytest.raises(ValidationError, match="max_pages"):
             await mcp.call_tool("get_connections", {"max_pages": 0})
+
+    async def test_get_connections_passes_oldest_connected_on(self, mock_context):
+        expected = {
+            "url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=RECENTLY_ADDED",
+            "sections": {},
+            "connections": [],
+        }
+        mock_extractor = _make_mock_extractor(expected)
+
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+
+        tool_fn = await get_tool_fn(mcp, "get_connections")
+        await tool_fn(
+            mock_context,
+            max_pages=2,
+            oldest_connected_on="2026-08-04",
+            extractor=mock_extractor,
+        )
+        mock_extractor.get_connections.assert_awaited_once_with(
+            max_pages=2,
+            oldest_connected_on="2026-08-04",
+        )
+
+    async def test_get_connections_rejects_invalid_oldest_connected_on(self, mock_context):
+        from fastmcp.exceptions import ValidationError
+
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        mcp = FastMCP("test")
+        register_person_tools(mcp)
+
+        with pytest.raises(ValidationError, match="oldest_connected_on"):
+            await mcp.call_tool(
+                "get_connections",
+                {"oldest_connected_on": "2026/08/04"},
+            )
 
     async def test_get_connections_error(self, mock_context):
         from fastmcp.exceptions import ToolError

@@ -4868,8 +4868,79 @@ class TestGetConnections:
             result = await extractor.get_connections(max_pages=3)
 
         assert len(result["connections"]) == 40
+        assert result["pages_fetched"] == 2
+        assert result["stop_reason"] == "no_new_connections"
         assert fetch_mock.await_count == 2
         sleep_mock.assert_awaited_once()
+
+    async def test_stops_when_page_reaches_older_than_cutoff(self, mock_page):
+        extractor = LinkedInExtractor(mock_page)
+        first_page = {
+            "ok": True,
+            "request_url": "https://www.linkedin.com/voyager/api/relationships/dash/connections?start=0",
+            "data": {
+                "elements": [
+                    {
+                        "createdAt": "2026-08-04",
+                        "connectedMemberResolutionResult": {
+                            "firstName": "Jane",
+                            "lastName": "Doe",
+                            "headline": "Engineer",
+                            "publicIdentifier": "janedoe",
+                        },
+                    },
+                    {
+                        "createdAt": "2026-08-03",
+                        "connectedMemberResolutionResult": {
+                            "firstName": "John",
+                            "lastName": "Smith",
+                            "headline": "Founder",
+                            "publicIdentifier": "johnsmith",
+                        },
+                    },
+                    {
+                        "createdAt": "2026-08-02",
+                        "connectedMemberResolutionResult": {
+                            "firstName": "Old",
+                            "lastName": "Lead",
+                            "headline": "Older row",
+                            "publicIdentifier": "oldlead",
+                        },
+                    },
+                ]
+            },
+        }
+        fetch_mock = AsyncMock(return_value=first_page)
+        with (
+            patch.object(extractor, "_navigate_to_page", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.detect_rate_limit",
+                new_callable=AsyncMock,
+            ),
+            patch.object(extractor, "_wait_for_main_text", new_callable=AsyncMock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.handle_modal_close",
+                new_callable=AsyncMock,
+            ),
+            patch.object(extractor, "_fetch_connections_page", fetch_mock),
+            patch(
+                "linkedin_mcp_server.scraping.extractor.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as sleep_mock,
+        ):
+            result = await extractor.get_connections(
+                max_pages=3,
+                oldest_connected_on="2026-08-03",
+            )
+
+        assert [item["linkedin_url"] for item in result["connections"]] == [
+            "https://www.linkedin.com/in/janedoe/",
+            "https://www.linkedin.com/in/johnsmith/",
+        ]
+        assert result["pages_fetched"] == 1
+        assert result["stop_reason"] == "older_than_cutoff"
+        assert fetch_mock.await_count == 1
+        sleep_mock.assert_not_awaited()
 
     async def test_surfaces_authentication_error_from_connections_api(self, mock_page):
         extractor = LinkedInExtractor(mock_page)
