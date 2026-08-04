@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import json
 import logging
 import re
@@ -504,6 +505,7 @@ class ConnectionEntry:
     full_name: str
     linkedin_url: str
     headline: str
+    connected_on: str | None = None
 
 
 _FEED_RSC_MARKER = "sduiid=com.linkedin.sdui.pagers.feed.mainFeed"
@@ -3052,9 +3054,49 @@ class LinkedInExtractor:
             lines = [connection.full_name]
             if connection.headline:
                 lines.append(connection.headline)
+            if connection.connected_on:
+                lines.append(connection.connected_on)
             lines.append(connection.linkedin_url)
             blocks.append("\n".join(lines))
         return "\n---\n".join(blocks)
+
+    @staticmethod
+    def _normalize_connection_date(value: Any) -> str | None:
+        """Normalize raw LinkedIn connection timestamps to ``YYYY-MM-DD``."""
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            timestamp = float(value)
+        else:
+            text = str(value).strip()
+            if not text:
+                return None
+            if text.isdigit():
+                timestamp = float(text)
+            else:
+                return text
+        if timestamp > 1_000_000_000_000:
+            timestamp /= 1000
+        try:
+            return datetime.fromtimestamp(timestamp, tz=UTC).date().isoformat()
+        except (OverflowError, OSError, ValueError):
+            return str(value).strip() or None
+
+    @classmethod
+    def _extract_connection_date(cls, raw: dict[str, Any]) -> str | None:
+        """Extract the relationship date from a raw LinkedIn connection row."""
+        for key in ("createdAt", "connectedAt"):
+            normalized = cls._normalize_connection_date(raw.get(key))
+            if normalized:
+                return normalized
+        for value in raw.values():
+            if not isinstance(value, dict):
+                continue
+            for key in ("createdAt", "connectedAt"):
+                normalized = cls._normalize_connection_date(value.get(key))
+                if normalized:
+                    return normalized
+        return None
 
     async def _fetch_connections_page(self, start: int) -> dict[str, Any]:
         """Fetch one connections API page from the authenticated browser session."""
@@ -3138,8 +3180,8 @@ class LinkedInExtractor:
             },
         )
 
-    @staticmethod
-    def _normalize_connection_entry(raw: dict[str, Any]) -> ConnectionEntry | None:
+    @classmethod
+    def _normalize_connection_entry(cls, raw: dict[str, Any]) -> ConnectionEntry | None:
         """Extract the public connection fields the tool returns."""
 
         def _walk(value: Any) -> list[dict[str, Any]]:
@@ -3183,6 +3225,7 @@ class LinkedInExtractor:
             full_name=full_name,
             linkedin_url=f"https://www.linkedin.com/in/{public_identifier}/",
             headline=headline,
+            connected_on=cls._extract_connection_date(raw),
         )
 
     async def get_connections(self, max_pages: int = 25) -> dict[str, Any]:
@@ -3197,7 +3240,7 @@ class LinkedInExtractor:
 
         Returns:
             {url, sections: {connections: text}, references: {connections: [...]},
-             connections: [{full_name, linkedin_url, headline}]}
+             connections: [{full_name, linkedin_url, headline, connected_on}]}
         """
         base_url = self._build_connections_page_url()
         await self._navigate_to_page(base_url)
@@ -3286,6 +3329,7 @@ class LinkedInExtractor:
                     "full_name": entry.full_name,
                     "linkedin_url": entry.linkedin_url,
                     "headline": entry.headline,
+                    "connected_on": entry.connected_on,
                 }
                 for entry in all_connections
             ],

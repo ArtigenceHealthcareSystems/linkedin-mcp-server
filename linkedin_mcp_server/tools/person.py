@@ -395,7 +395,7 @@ def register_person_tools(
         Returns:
             Dict with url, sections (connections -> raw text), optional
             references, and a connections list containing full_name,
-            linkedin_url, and headline for each connection.
+            linkedin_url, headline, and connected_on for each connection.
         """
         try:
             extractor = extractor or await get_ready_extractor(

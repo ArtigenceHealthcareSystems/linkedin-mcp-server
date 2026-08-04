@@ -4755,6 +4755,7 @@ class TestGetConnections:
             "data": {
                 "elements": [
                     {
+                        "createdAt": 1783987200000,
                         "connectedMemberResolutionResult": {
                             "firstName": "Jane",
                             "lastName": "Doe",
@@ -4802,10 +4803,11 @@ class TestGetConnections:
             "full_name": "Jane Doe",
             "linkedin_url": "https://www.linkedin.com/in/janedoe/",
             "headline": "Staff Engineer at Acme",
+            "connected_on": "2026-07-14",
         }
         assert (
             result["sections"]["connections"]
-            == "Jane Doe\nStaff Engineer at Acme\nhttps://www.linkedin.com/in/janedoe/\n---\nJohn Smith\nFounder at Beta\nhttps://www.linkedin.com/in/johnsmith/"
+            == "Jane Doe\nStaff Engineer at Acme\n2026-07-14\nhttps://www.linkedin.com/in/janedoe/\n---\nJohn Smith\nFounder at Beta\nhttps://www.linkedin.com/in/johnsmith/"
         )
         assert result["references"]["connections"][0]["url"] == "/in/janedoe/"
 

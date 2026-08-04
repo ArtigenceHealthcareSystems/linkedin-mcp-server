@@ -970,7 +970,7 @@ class TestGetConnectionsTool:
             "url": "https://www.linkedin.com/mynetwork/invite-connect/connections/?sortType=RECENTLY_ADDED",
             "sections": {
                 "connections": (
-                    "Jane Doe\nStaff Engineer at Acme\n"
+                    "Jane Doe\nStaff Engineer at Acme\n2026-07-14\n"
                     "https://www.linkedin.com/in/janedoe/"
                 )
             },
@@ -979,6 +979,7 @@ class TestGetConnectionsTool:
                     "full_name": "Jane Doe",
                     "linkedin_url": "https://www.linkedin.com/in/janedoe/",
                     "headline": "Staff Engineer at Acme",
+                    "connected_on": "2026-07-14",
                 }
             ],
         }
