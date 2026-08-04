@@ -377,10 +377,23 @@ This opens a browser window where you log in manually (5 minute timeout for 2FA,
 ```bash
 docker run -it --rm \
   -v ~/.linkedin-mcp:/home/pwuser/.linkedin-mcp \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   ghcr.io/artigencehealthcaresystems/linkedin-mcp-server:latest \
   --transport streamable-http --host 0.0.0.0 --port 8080 --path /mcp
 ```
+
+Both halves of that are needed, and they do different jobs. `--host 0.0.0.0`
+makes the server reachable *inside* the container: a process bound to
+`127.0.0.1` in there cannot be reached through a published port at all. The
+`127.0.0.1:` in front of `-p` is what limits it *outside*, to this machine.
+Drop that prefix and Docker publishes on every interface, which puts an
+endpoint with no authentication on your network. The server cannot tell the two
+apart, so it warns either way.
+
+Loopback publishing limits this to the machine, not to the container. Other
+containers on the same host can still reach it through `host.docker.internal`
+wherever that name resolves, which is the default on Docker Desktop and
+OrbStack but not on native Linux Docker.
 
 Runtime server logs are emitted by FastMCP/Uvicorn.
 
@@ -521,7 +534,6 @@ The local server uses the same managed-runtime flow as MCPB and `uvx`: it prepar
 - `--status` - Check if current session is valid and exit
 - `--user-data-dir PATH` - Path to persistent browser profile directory (default: ~/.linkedin-mcp/profile)
 - `--slow-mo MS` - Delay between browser actions in milliseconds (default: 0, useful for debugging)
-- `--user-agent STRING` - Custom browser user agent
 - `--viewport WxH` - Browser viewport size (default: 1280x720)
 - `--chrome-path PATH` - Path to Chrome/Chromium executable (for custom browser installations)
 - `--proxy-server URL` - Route the browser through a proxy, as `scheme://host:port`. Set the password via `PROXY_PASSWORD` (no flag, so it stays out of the process list)
