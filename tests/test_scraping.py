@@ -150,6 +150,63 @@ def mock_page():
     return page
 
 
+class TestInteractionCounting:
+    """Focused tests for the broader clicks_performed interaction counter."""
+
+    async def test_navigate_to_page_counts_navigation(self, mock_page):
+        """A successful page navigation increments the interaction counter."""
+        extractor = LinkedInExtractor(mock_page)
+
+        with patch.object(
+            extractor, "_goto_with_auth_checks", new_callable=AsyncMock
+        ) as mock_goto:
+            await extractor._navigate_to_page("https://www.linkedin.com/in/testuser/")
+
+        mock_goto.assert_awaited_once_with("https://www.linkedin.com/in/testuser/")
+        assert extractor.clicks_performed == 1
+
+    async def test_fill_dialog_textarea_counts_typing(self, mock_page):
+        """Filling the invite note textarea counts as one typing action."""
+        extractor = LinkedInExtractor(mock_page)
+        textarea = MagicMock()
+        textarea.count = AsyncMock(return_value=1)
+        textarea.first = textarea
+        textarea.fill = AsyncMock()
+        mock_page.locator.return_value = textarea
+
+        filled = await extractor._fill_dialog_textarea("Hello")
+
+        assert filled is True
+        textarea.fill.assert_awaited_once_with("Hello", timeout=5000)
+        assert extractor.clicks_performed == 1
+
+    async def test_scroll_main_region_counts_each_scroll_attempt(self, mock_page):
+        """Each successful main-region scroll attempt increments the counter."""
+        extractor = LinkedInExtractor(mock_page)
+        mock_page.evaluate = AsyncMock(return_value=True)
+
+        with patch(
+            "linkedin_mcp_server.scraping.extractor.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            await extractor._scroll_main_scrollable_region(
+                position="bottom", attempts=3, pause_time=0.1
+            )
+
+        assert extractor.clicks_performed == 3
+
+    async def test_dismiss_dialog_counts_keyboard_press(self, mock_page):
+        """Dismissing a dialog counts the Escape key press."""
+        extractor = LinkedInExtractor(mock_page)
+        mock_page.keyboard = MagicMock()
+        mock_page.keyboard.press = AsyncMock()
+
+        await extractor._dismiss_dialog()
+
+        mock_page.keyboard.press.assert_awaited_once_with("Escape")
+        assert extractor.clicks_performed == 1
+
+
 class TestExtractPage:
     async def test_extract_page_returns_text(self, mock_page):
         mock_page.evaluate = AsyncMock(
@@ -4493,6 +4550,7 @@ class TestGetSidebarProfiles:
         assert result == {
             "url": "https://www.linkedin.com/in/testuser/",
             "sidebar_profiles": {},
+            "clicks_performed": 0,
         }
 
 
@@ -5901,6 +5959,7 @@ class TestSendMessageComposerInteraction:
 
         assert result["status"] == "sent"
         assert result["sent"] is True
+        assert result["clicks_performed"] == 2
         # Verify keyboard.type was used (not press_sequentially)
         mock_keyboard.type.assert_awaited_once_with("Hello!", delay=15)
 
@@ -5932,6 +5991,7 @@ class TestSendMessageComposerInteraction:
 
         assert result["status"] == "compose_interact_failed"
         assert result["sent"] is False
+        assert result["clicks_performed"] == 0
 
     async def test_enter_fallback_when_send_button_not_found(self, mock_page):
         """send_message falls back to Enter key when JS cannot find send button."""
@@ -5967,6 +6027,7 @@ class TestSendMessageComposerInteraction:
             )
 
         assert result["status"] == "sent"
+        assert result["clicks_performed"] == 2
         # Enter was pressed as fallback
         mock_keyboard.press.assert_awaited_once_with("Enter")
 

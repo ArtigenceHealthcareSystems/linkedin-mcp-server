@@ -17,6 +17,7 @@ from linkedin_mcp_server.core.exceptions import (
 )
 from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_error
 from linkedin_mcp_server.error_handler import raise_tool_error
+from linkedin_mcp_server.tools import ensure_clicks_performed
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def register_messaging_tools(
             limit: Maximum number of conversations to load (1-50, default 20)
 
         Returns:
-            Dict with url, sections (inbox -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (inbox -> raw text), and optional references.
         """
         try:
             extractor = extractor or await get_ready_extractor(
@@ -62,7 +63,7 @@ def register_messaging_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -112,7 +113,7 @@ def register_messaging_tools(
                 thread IDs first, call search_conversations.
 
         Returns:
-            Dict with url, sections (conversation -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (conversation -> raw text), and optional references.
         """
         if not linkedin_username and not thread_id:
             raise_tool_error(
@@ -145,7 +146,7 @@ def register_messaging_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -183,7 +184,7 @@ def register_messaging_tools(
                 a low cap is preferable for noisy queries.
 
         Returns:
-            Dict with url, sections (search_results -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (search_results -> raw text), and optional references.
         """
         try:
             extractor = extractor or await get_ready_extractor(
@@ -201,7 +202,7 @@ def register_messaging_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -244,7 +245,7 @@ def register_messaging_tools(
                 messages; use search_conversations as a fallback.
 
         Returns:
-            Dict with url, status, message, recipient_selected, and sent.
+            Dict with url, clicks_performed, status, message, recipient_selected, and sent.
         """
         try:
             extractor = extractor or await get_ready_extractor(
@@ -267,7 +268,7 @@ def register_messaging_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:

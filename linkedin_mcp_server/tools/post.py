@@ -20,6 +20,7 @@ from linkedin_mcp_server.core.exceptions import AuthenticationError
 from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_error
 from linkedin_mcp_server.error_handler import raise_tool_error
 from linkedin_mcp_server.scraping.extractor import FilterValidationError
+from linkedin_mcp_server.tools import ensure_clicks_performed
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def register_post_tools(
                 discrete pages.
 
         Returns:
-            Dict with url, sections (search_results -> raw text), and optional
+            Dict with url, clicks_performed, sections (search_results -> raw text), and optional
             references (post authors, companies, linked jobs) and
             section_errors. The results page carries no per-post permalinks,
             so reach a post through its author. The LLM should parse the raw
@@ -101,7 +102,7 @@ def register_post_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except ToolError:
             # Already a properly formatted client-facing error; do not log it

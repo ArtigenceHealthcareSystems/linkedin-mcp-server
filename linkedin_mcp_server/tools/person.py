@@ -19,6 +19,7 @@ from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_er
 from linkedin_mcp_server.error_handler import raise_tool_error
 from linkedin_mcp_server.scraping import parse_person_sections
 from linkedin_mcp_server.scraping.extractor import FilterValidationError
+from linkedin_mcp_server.tools import ensure_clicks_performed
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def register_person_tools(
                 other sections, request heavy sections in a separate call.
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (name -> raw text), and optional references.
             Sections may be absent if extraction yielded no content for that page.
             Includes unknown_sections list when unrecognised names are passed.
             The LLM should parse the raw text in each section.
@@ -91,7 +92,7 @@ def register_person_tools(
             if unknown:
                 result["unknown_sections"] = unknown
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -136,7 +137,7 @@ def register_person_tools(
                 slug-based lookup, use get_company_employees instead.
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (name -> raw text), and optional references.
             The LLM should parse the raw text to extract individual people and their profiles.
         """
         try:
@@ -170,7 +171,7 @@ def register_person_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except ToolError:
             # Already a properly formatted client-facing error; do not
@@ -209,7 +210,7 @@ def register_person_tools(
             note: Optional note to include with the invitation
 
         Returns:
-            Dict with url, status, message, and note_sent.
+            Dict with url, clicks_performed, status, message, and note_sent.
             Statuses: pending, already_connected, follow_only,
             connect_unavailable, unavailable, send_failed,
             note_not_supported, custom_note_limit_reached,
@@ -243,7 +244,7 @@ def register_person_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -279,7 +280,7 @@ def register_person_tools(
             ctx: FastMCP context for progress reporting
 
         Returns:
-            Dict with url and sidebar_profiles mapping section key to a list of
+            Dict with url, clicks_performed, and sidebar_profiles mapping section key to a list of
             /in/username/ paths. Only sections present on the page are included.
         """
         try:
@@ -296,7 +297,7 @@ def register_person_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -336,7 +337,7 @@ def register_person_tools(
             max_scrolls: Maximum pagination attempts per section (same as get_person_profile).
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (name -> raw text), and optional references.
             The url field reflects the resolved profile URL, revealing the real username.
         """
         try:
@@ -357,7 +358,7 @@ def register_person_tools(
             if unknown:
                 result["unknown_sections"] = unknown
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -400,7 +401,8 @@ def register_person_tools(
             Dict with url, sections (connections -> raw text), optional
             references, pages_fetched, stop_reason, and a connections list
             containing full_name, linkedin_url, headline, and connected_on
-            for each connection.
+            for each connection. clicks_performed reports successful UI actions,
+            including navigation, clicks, typing, scrolling, and keyboard presses.
         """
         try:
             extractor = extractor or await get_ready_extractor(
@@ -423,7 +425,7 @@ def register_person_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:

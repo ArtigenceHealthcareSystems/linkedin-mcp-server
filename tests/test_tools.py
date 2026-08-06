@@ -22,6 +22,7 @@ async def get_tool_fn(
 def _make_mock_extractor(scrape_result: dict) -> MagicMock:
     """Create a mock LinkedInExtractor that returns the given result."""
     mock = MagicMock()
+    mock.clicks_performed = 0
     mock.scrape_person = AsyncMock(return_value=scrape_result)
     mock.connect_with_person = AsyncMock(return_value=scrape_result)
     mock.scrape_company = AsyncMock(return_value=scrape_result)
@@ -62,6 +63,7 @@ class TestPersonTool:
         tool_fn = await get_tool_fn(mcp, "get_person_profile")
         result = await tool_fn("test-user", mock_context, extractor=mock_extractor)
         assert result["url"] == "https://www.linkedin.com/in/test-user/"
+        assert result["clicks_performed"] == 0
         assert "main_profile" in result["sections"]
         assert "pages_visited" not in result
         assert "sections_requested" not in result
@@ -355,6 +357,7 @@ class TestPersonTool:
         )
 
         assert result["status"] == "connected"
+        assert result["clicks_performed"] == 0
         assert result["note_sent"] is True
         mock_extractor.connect_with_person.assert_awaited_once_with(
             "test-user",
@@ -383,6 +386,7 @@ class TestPersonTool:
         )
 
         assert result["status"] == "connected"
+        assert result["clicks_performed"] == 0
         mock_extractor.connect_with_person.assert_awaited_once_with(
             "test-user",
             note=None,
@@ -487,6 +491,7 @@ class TestCompanyTools:
 
         tool_fn = await get_tool_fn(mcp, "get_company_profile")
         result = await tool_fn("testcorp", mock_context, extractor=mock_extractor)
+        assert result["clicks_performed"] == 0
         assert "about" in result["sections"]
         assert "pages_visited" not in result
 
@@ -543,6 +548,7 @@ class TestCompanyTools:
         result = await tool_fn("testcorp", mock_context, extractor=mock_extractor)
         assert "posts" in result["sections"]
         assert result["sections"]["posts"] == "Post 1\nPost 2"
+        assert result["clicks_performed"] == 0
         assert "pages_visited" not in result
         assert "sections_requested" not in result
 
@@ -664,6 +670,7 @@ class TestJobTools:
         result = await tool_fn(mock_context, max_pages=2, extractor=mock_extractor)
         assert "saved_jobs" in result["sections"]
         assert result["job_ids"] == ["111", "222"]
+        assert result["clicks_performed"] == 0
         mock_extractor.get_saved_jobs.assert_awaited_once_with(max_pages=2)
 
 
@@ -763,6 +770,7 @@ class TestMessagingTools:
         )
 
         assert result["sections"]["conversation"] == "Hello!\nHi there!"
+        assert result["clicks_performed"] == 0
         mock_extractor.get_conversation.assert_awaited_once_with(
             linkedin_username="testuser", thread_id=None, index=0
         )
@@ -783,6 +791,7 @@ class TestMessagingTools:
         result = await tool_fn("hello", mock_context, extractor=mock_extractor)
 
         assert result["sections"]["search_results"] == "Result 1\nResult 2"
+        assert result["clicks_performed"] == 0
         mock_extractor.search_conversations.assert_awaited_once_with("hello", limit=20)
 
     async def test_send_message_success(self, mock_context):
@@ -810,6 +819,7 @@ class TestMessagingTools:
         )
 
         assert result["status"] == "sent"
+        assert result["clicks_performed"] == 0
         assert result["sent"] is True
         mock_extractor.send_message.assert_awaited_once_with(
             "testuser", "Hello!", confirm_send=True, profile_urn=None
@@ -841,6 +851,7 @@ class TestMessagingTools:
         )
 
         assert result["status"] == "sent"
+        assert result["clicks_performed"] == 0
         mock_extractor.send_message.assert_awaited_once_with(
             "testuser", "Hello!", confirm_send=True, profile_urn="ACoAAB1IelEB"
         )
@@ -885,6 +896,7 @@ class TestGetMyProfileTool:
         tool_fn = await get_tool_fn(mcp, "get_my_profile")
         result = await tool_fn(mock_context, extractor=mock_extractor)
         assert result["url"] == "https://www.linkedin.com/in/johndoe/"
+        assert result["clicks_performed"] == 0
         assert "main_profile" in result["sections"]
         mock_extractor.get_my_profile.assert_awaited_once()
 
@@ -994,6 +1006,7 @@ class TestGetConnectionsTool:
         result = await tool_fn(mock_context, extractor=mock_extractor)
         assert "connections" in result["sections"]
         assert result["connections"][0]["full_name"] == "Jane Doe"
+        assert result["clicks_performed"] == 0
         mock_extractor.get_connections.assert_awaited_once_with(
             max_pages=25,
             oldest_connected_on=None,
@@ -1199,6 +1212,7 @@ class TestFeedTools:
         tool_fn = await get_tool_fn(mcp, "get_feed")
         result = await tool_fn(mock_context, extractor=mock_extractor)
         assert result["url"] == "https://www.linkedin.com/feed/"
+        assert result["clicks_performed"] == 0
         assert "feed" in result["sections"]
         assert result["sections"]["feed"] == "Post 1\nPost 2"
         assert "posts" not in result
@@ -1327,6 +1341,7 @@ class TestPostTools:
             extractor=mock_extractor,
         )
         assert "search_results" in result["sections"]
+        assert result["clicks_performed"] == 0
         mock_extractor.search_posts.assert_awaited_once_with(
             "Buscamos Unity",
             date_posted="past-week",

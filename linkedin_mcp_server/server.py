@@ -288,12 +288,17 @@ def create_mcp_server(
             tags={"session"},
         )
         async def close_session() -> dict[str, Any]:
-            """Close the current browser session and clean up resources."""
+            """Close the current browser session and clean up resources.
+
+            Returns:
+                Dict with status, message, and clicks_performed.
+            """
             try:
                 await close_browser()
                 return {
                     "status": "success",
                     "message": "Successfully closed the browser session and cleaned up resources",
+                    "clicks_performed": 0,
                 }
             except Exception as e:
                 raise_tool_error(e, "close_session")  # NoReturn

@@ -21,3 +21,19 @@ Architecture:
 - Singleton driver pattern for session persistence
 - Structured data return format for consistent MCP responses
 """
+
+from typing import Any
+
+
+def ensure_clicks_performed(result: dict[str, Any], extractor: Any) -> dict[str, Any]:
+    """Ensure every tool result includes the per-call UI action counter."""
+    current = result.get("clicks_performed")
+    if isinstance(current, int):
+        return result
+
+    clicks_performed = getattr(extractor, "clicks_performed", 0)
+    if not isinstance(clicks_performed, int):
+        clicks_performed = 0
+
+    result["clicks_performed"] = clicks_performed
+    return result

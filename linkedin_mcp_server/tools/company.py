@@ -21,6 +21,7 @@ from linkedin_mcp_server.scraping.extractor import (
     rate_limited_section_error,
 )
 from linkedin_mcp_server.scraping.link_metadata import Reference
+from linkedin_mcp_server.tools import ensure_clicks_performed
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def register_company_tools(
                 Default (None) scrapes only the about page.
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (name -> raw text), and optional references.
             Includes unknown_sections list when unrecognised names are passed.
             The LLM should parse the raw text in each section.
 
@@ -88,7 +89,7 @@ def register_company_tools(
             if unknown:
                 result["unknown_sections"] = unknown
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -118,7 +119,7 @@ def register_company_tools(
             ctx: FastMCP context for progress reporting
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (name -> raw text), and optional references.
             The LLM should parse the raw text to extract individual posts.
         """
         try:
@@ -148,15 +149,20 @@ def register_company_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
+            clicks_performed = getattr(extractor, "clicks_performed", 0)
+            if not isinstance(clicks_performed, int):
+                clicks_performed = 0
+
             result: dict[str, Any] = {
                 "url": url,
                 "sections": sections,
+                "clicks_performed": clicks_performed,
             }
             if references:
                 result["references"] = references
             if section_errors:
                 result["section_errors"] = section_errors
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -186,7 +192,7 @@ def register_company_tools(
             ctx: FastMCP context for progress reporting
 
         Returns:
-            Dict with url, sections (search_results -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (search_results -> raw text), and optional references.
             The LLM should parse the raw text to extract individual companies and their pages.
         """
         try:
@@ -203,7 +209,7 @@ def register_company_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -251,7 +257,7 @@ def register_company_tools(
             keywords: Optional filter by name, job title, or skill (e.g., "engineer", "sales")
 
         Returns:
-            Dict with url, sections (employees -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (employees -> raw text), and optional references.
             References include /in/ profile paths for listed employees.
         """
         try:
@@ -272,7 +278,7 @@ def register_company_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:

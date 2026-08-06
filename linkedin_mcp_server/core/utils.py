@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 from patchright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
@@ -66,7 +67,10 @@ async def detect_rate_limit(page: Page) -> None:
 
 
 async def scroll_to_bottom(
-    page: Page, pause_time: float = 1.0, max_scrolls: int = 10
+    page: Page,
+    pause_time: float = 1.0,
+    max_scrolls: int = 10,
+    on_scroll: Callable[[int], None] | None = None,
 ) -> None:
     """Scroll to the bottom of the page to trigger lazy loading.
 
@@ -74,10 +78,13 @@ async def scroll_to_bottom(
         page: Patchright page object
         pause_time: Time to pause between scrolls (seconds)
         max_scrolls: Maximum number of scroll attempts
+        on_scroll: Optional callback invoked after each scroll attempt.
     """
     for i in range(max_scrolls):
         previous_height = await page.evaluate("document.body.scrollHeight")
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        if on_scroll is not None:
+            on_scroll(1)
         await asyncio.sleep(pause_time)
 
         new_height = await page.evaluate("document.body.scrollHeight")
@@ -87,7 +94,10 @@ async def scroll_to_bottom(
 
 
 async def scroll_job_sidebar(
-    page: Page, pause_time: float = 1.0, max_scrolls: int = 10
+    page: Page,
+    pause_time: float = 1.0,
+    max_scrolls: int = 10,
+    on_scroll: Callable[[int], None] | None = None,
 ) -> None:
     """Scroll the job search sidebar to load all job cards.
 
@@ -100,6 +110,7 @@ async def scroll_job_sidebar(
         page: Patchright page object
         pause_time: Time to pause between scrolls (seconds)
         max_scrolls: Maximum number of scroll attempts
+        on_scroll: Optional callback invoked with the number of scroll attempts.
     """
     # Wait for at least one job card link to render before scrolling
     try:
@@ -108,10 +119,10 @@ async def scroll_job_sidebar(
         logger.debug("No job card links found, skipping sidebar scroll")
         return
 
-    scrolled = await page.evaluate(
+    scroll_result = await page.evaluate(
         """async ({pauseTime, maxScrolls}) => {
             const link = document.querySelector('a[href*="/jobs/view/"]');
-            if (!link) return -2;
+            if (!link) return { status: 'missing_link', attempts: 0, loaded: 0 };
 
             let container = link.parentElement;
             while (container && container !== document.body) {
@@ -125,36 +136,51 @@ async def scroll_job_sidebar(
             }
 
             if (!container || container === document.body) {
-                return -1;
+                return { status: 'missing_container', attempts: 0, loaded: 0 };
             }
 
-            let scrollCount = 0;
+            let attempts = 0;
+            let loaded = 0;
             for (let i = 0; i < maxScrolls; i++) {
                 const prevHeight = container.scrollHeight;
                 container.scrollTop = container.scrollHeight;
+                attempts++;
                 await new Promise(r => setTimeout(r, pauseTime * 1000));
                 if (container.scrollHeight === prevHeight) break;
-                scrollCount++;
+                loaded++;
             }
-            return scrollCount;
+            return { status: 'ok', attempts, loaded };
         }""",
         {"pauseTime": pause_time, "maxScrolls": max_scrolls},
     )
-    if scrolled == -2:
+    attempts = int(scroll_result.get("attempts", 0))
+    if attempts > 0 and on_scroll is not None:
+        on_scroll(attempts)
+
+    status = scroll_result.get("status")
+    loaded = int(scroll_result.get("loaded", 0))
+    if status == "missing_link":
         logger.debug("Job card link disappeared before evaluate, skipping scroll")
-    elif scrolled == -1:
+    elif status == "missing_container":
         logger.debug("No scrollable container found for job sidebar")
-    elif scrolled:
-        logger.debug("Scrolled job sidebar %d times", scrolled)
+    elif loaded:
+        logger.debug("Scrolled job sidebar %d times", loaded)
     else:
         logger.debug("Job sidebar container found but no new content loaded")
 
 
-async def handle_modal_close(page: Page) -> bool:
+async def handle_modal_close(
+    page: Page,
+    on_click: Callable[[], None] | None = None,
+) -> bool:
     """Close any popup modals that might be blocking content.
 
+    Args:
+        page: Patchright page object.
+        on_click: Optional callback run after the dismiss button is clicked.
+
     Returns:
-        True if a modal was closed, False otherwise
+        True if a modal was closed, False otherwise.
     """
     try:
         close_button = page.locator(
@@ -165,6 +191,8 @@ async def handle_modal_close(page: Page) -> bool:
 
         if await close_button.is_visible(timeout=1000):
             await close_button.click()
+            if on_click is not None:
+                on_click()
             await asyncio.sleep(0.5)
             logger.debug("Closed modal")
             return True

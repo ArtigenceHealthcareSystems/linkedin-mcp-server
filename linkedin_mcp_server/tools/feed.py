@@ -23,6 +23,7 @@ from linkedin_mcp_server.scraping.extractor import (
     rate_limited_section_error,
 )
 from linkedin_mcp_server.scraping.link_metadata import Reference
+from linkedin_mcp_server.tools import ensure_clicks_performed
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ def register_feed_tools(
                        so the actual count may slightly exceed the target.
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional keys:
+            Dict with url, clicks_performed, sections (name -> raw text), and optional keys:
             - references["feed"]: list of {kind: "feed_post", url, ...}
               entries. URLs are relative paths and may carry either
               ``/feed/update/<urn>/`` (DOM-anchor-derived) or
@@ -94,12 +95,20 @@ def register_feed_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            result: dict[str, Any] = {"url": url, "sections": sections}
+            clicks_performed = getattr(extractor, "clicks_performed", 0)
+            if not isinstance(clicks_performed, int):
+                clicks_performed = 0
+
+            result: dict[str, Any] = {
+                "url": url,
+                "sections": sections,
+                "clicks_performed": clicks_performed,
+            }
             if references:
                 result["references"] = references
             if section_errors:
                 result["section_errors"] = section_errors
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:

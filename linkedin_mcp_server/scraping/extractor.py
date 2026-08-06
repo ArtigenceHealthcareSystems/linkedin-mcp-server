@@ -433,6 +433,7 @@ def _connection_result(
     *,
     note_sent: bool = False,
     profile: str = "",
+    clicks_performed: int = 0,
 ) -> dict[str, Any]:
     """Build a structured response for a profile connection attempt."""
     result: dict[str, Any] = {
@@ -440,6 +441,7 @@ def _connection_result(
         "status": status,
         "message": message,
         "note_sent": note_sent,
+        "clicks_performed": clicks_performed,
     }
     if profile:
         result["profile"] = profile
@@ -762,6 +764,25 @@ class LinkedInExtractor:
 
     def __init__(self, page: Page):
         self._page = page
+        self._clicks_performed = 0
+
+    @property
+    def clicks_performed(self) -> int:
+        """Return how many UI actions this extractor has performed."""
+        return self._clicks_performed
+
+    def _record_interaction(self, count: int = 1) -> None:
+        """Add one or more successful UI actions to this call's counter."""
+        self._clicks_performed += max(0, count)
+
+    def _record_click(self, count: int = 1) -> None:
+        """Backward-compatible wrapper for the shared UI action counter."""
+        self._record_interaction(count)
+
+    def _attach_click_count(self, result: dict[str, Any]) -> dict[str, Any]:
+        """Append the per-call UI action count to a tool result payload."""
+        result["clicks_performed"] = self.clicks_performed
+        return result
 
     @staticmethod
     def _normalize_body_marker(value: Any) -> str:
@@ -770,8 +791,8 @@ class LinkedInExtractor:
             return ""
         return re.sub(r"\s+", " ", value).strip()[:200]
 
-    @staticmethod
     def _single_section_result(
+        self,
         url: str,
         section_name: str,
         text: str,
@@ -783,10 +804,10 @@ class LinkedInExtractor:
             result["sections"][section_name] = text
             if references:
                 result["references"] = {section_name: references}
-        return result
+        return self._attach_click_count(result)
 
-    @staticmethod
     def _message_action_result(
+        self,
         url: str,
         status: str,
         message: str,
@@ -795,13 +816,15 @@ class LinkedInExtractor:
         sent: bool = False,
     ) -> dict[str, Any]:
         """Build a structured response for the send_message tool."""
-        return {
-            "url": url,
-            "status": status,
-            "message": message,
-            "recipient_selected": recipient_selected,
-            "sent": sent,
-        }
+        return self._attach_click_count(
+            {
+                "url": url,
+                "status": status,
+                "message": message,
+                "recipient_selected": recipient_selected,
+                "sent": sent,
+            }
+        )
 
     async def _log_navigation_failure(
         self,
@@ -1011,6 +1034,7 @@ class LinkedInExtractor:
         """Navigate to a LinkedIn page and fail fast on auth barriers."""
         logger.debug("_navigate_to_page: target=%s", url)
         await self._goto_with_auth_checks(url)
+        self._record_interaction()
 
     # ------------------------------------------------------------------
     # Generic browser helpers for LLM-driven connection flow
@@ -1044,10 +1068,12 @@ class LinkedInExtractor:
         target = matches.first
         try:
             await target.scroll_into_view_if_needed(timeout=timeout)
+            self._record_interaction()
         except Exception:
             logger.debug("Scroll failed for button '%s'", text, exc_info=True)
         try:
             await target.click(timeout=timeout)
+            self._record_click()
             return True
         except Exception:
             logger.debug("Click failed for button '%s'", text, exc_info=True)
@@ -1079,6 +1105,7 @@ class LinkedInExtractor:
             return False
         try:
             await buttons.nth(count - 1).click(timeout=timeout)
+            self._record_click()
             return True
         except Exception:
             logger.debug("Primary dialog button click failed", exc_info=True)
@@ -1091,6 +1118,7 @@ class LinkedInExtractor:
             if await self._page.locator(_DIALOG_TEXTAREA_SELECTOR).count() == 0:
                 return False
             await locator.fill(value, timeout=timeout)
+            self._record_interaction()
             return True
         except Exception:
             return False
@@ -1098,6 +1126,7 @@ class LinkedInExtractor:
     async def _dismiss_dialog(self) -> None:
         """Dismiss any open dialog via Escape key (structural)."""
         await self._page.keyboard.press("Escape")
+        self._record_interaction()
         try:
             await self._page.wait_for_selector(
                 _DIALOG_SELECTOR, state="hidden", timeout=3000
@@ -1171,6 +1200,7 @@ class LinkedInExtractor:
             return False
         if not clicked:
             return False
+        self._record_click()
         try:
             await self._page.wait_for_selector("[role='menu']", timeout=3000)
             return True
@@ -1190,7 +1220,10 @@ class LinkedInExtractor:
         mitigations. Returns True iff the click landed.
         """
         try:
-            return bool(await self._page.evaluate(_CLICK_INCOMING_ACCEPT_JS))
+            clicked = bool(await self._page.evaluate(_CLICK_INCOMING_ACCEPT_JS))
+            if clicked:
+                self._record_click()
+            return clicked
         except Exception:
             logger.debug("Incoming accept click via JS failed", exc_info=True)
             return False
@@ -1221,9 +1254,11 @@ class LinkedInExtractor:
         target = self._page.locator(selector).first
         try:
             await target.scroll_into_view_if_needed(timeout=timeout)
+            self._record_interaction()
         except Exception:
             logger.debug("Could not scroll %s into view", selector, exc_info=True)
         await target.click(timeout=timeout)
+        self._record_click()
 
     async def _wait_for_main_text(
         self,
@@ -1255,7 +1290,7 @@ class LinkedInExtractor:
     ) -> None:
         """Scroll the largest scrollable region inside main when one exists."""
         for _ in range(attempts):
-            await self._page.evaluate(
+            did_scroll = await self._page.evaluate(
                 """({ position }) => {
                     const main = document.querySelector('main');
                     if (!main) return false;
@@ -1277,6 +1312,8 @@ class LinkedInExtractor:
                 }""",
                 {"position": position},
             )
+            if did_scroll:
+                self._record_interaction()
             await asyncio.sleep(pause_time)
 
     async def extract_feed(
@@ -1360,7 +1397,7 @@ class LinkedInExtractor:
         except PlaywrightTimeoutError:
             logger.debug("No <main> element found on %s", url)
 
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
 
         try:
             await self._page.wait_for_function(
@@ -1394,6 +1431,7 @@ class LinkedInExtractor:
                 break
 
             await self._page.mouse.wheel(0, _WHEEL_DELTA)
+            self._record_interaction()
 
             new_count = count
             for _ in range(int(_BATCH_WAIT)):
@@ -1534,7 +1572,7 @@ class LinkedInExtractor:
             logger.debug("No <main> element found on %s", url)
 
         # Dismiss any modals blocking content
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
 
         # Activity feed pages lazy-load post content after the tab header.
         # Company posts pages (/company/<slug>/posts/) lazy-load the same way
@@ -1632,7 +1670,9 @@ class LinkedInExtractor:
                     if not await target.is_visible():
                         break
                     await target.scroll_into_view_if_needed(timeout=2000)
+                    self._record_interaction()
                     await target.click(timeout=2000)
+                    self._record_click()
                     await asyncio.sleep(1.0)
                 except PlaywrightTimeoutError:
                     logger.debug("Show more click timed out after %d clicks", i)
@@ -1644,10 +1684,20 @@ class LinkedInExtractor:
         # Scroll to trigger lazy loading
         if is_activity:
             scrolls = max_scrolls if max_scrolls is not None else 10
-            await scroll_to_bottom(self._page, pause_time=1.0, max_scrolls=scrolls)
+            await scroll_to_bottom(
+                self._page,
+                pause_time=1.0,
+                max_scrolls=scrolls,
+                on_scroll=self._record_interaction,
+            )
         else:
             scrolls = max_scrolls if max_scrolls is not None else 5
-            await scroll_to_bottom(self._page, pause_time=0.5, max_scrolls=scrolls)
+            await scroll_to_bottom(
+                self._page,
+                pause_time=0.5,
+                max_scrolls=scrolls,
+                on_scroll=self._record_interaction,
+            )
 
         # Extract text from main content area
         raw_result = await self._extract_root_content(["main"])
@@ -1888,6 +1938,8 @@ class LinkedInExtractor:
         if section_errors:
             result["section_errors"] = section_errors
 
+        result = self._attach_click_count(result)
+
         if callbacks:
             await callbacks.on_complete("person profile", result)
 
@@ -2000,6 +2052,7 @@ class LinkedInExtractor:
                 btn_count = await buttons.count()
                 if btn_count >= 2:
                     await buttons.nth(btn_count - 2).click()
+                    self._record_click()
                     try:
                         await self._page.wait_for_selector(
                             _DIALOG_TEXTAREA_SELECTOR,
@@ -2037,6 +2090,7 @@ class LinkedInExtractor:
                 try:
                     await buttons.nth(btn_count - 1).focus()
                     await self._page.keyboard.press("Enter")
+                    self._record_interaction()
                     sent = not await self._dialog_is_open(timeout=2000)
                 except Exception:
                     logger.debug("Keyboard submit fallback failed", exc_info=True)
@@ -2114,6 +2168,7 @@ class LinkedInExtractor:
         if btn_count >= 3:
             try:
                 await buttons.nth(btn_count - 2).click()
+                self._record_click()
             except Exception:
                 logger.debug("Could not open invite note editor", exc_info=True)
             try:
@@ -2154,11 +2209,28 @@ class LinkedInExtractor:
 
         url = f"https://www.linkedin.com/in/{username}/"
 
+        def build_result(
+            status: str,
+            message: str,
+            *,
+            note_sent: bool = False,
+            profile: str = "",
+        ) -> dict[str, Any]:
+            return _connection_result(
+                url,
+                status,
+                message,
+                note_sent=note_sent,
+                profile=profile,
+                clicks_performed=self.clicks_performed,
+            )
+
         profile = await self.scrape_person(username, {"main_profile"})
         page_text = profile.get("sections", {}).get("main_profile", "")
         if not page_text:
-            return _connection_result(
-                url, "unavailable", "Could not read profile page."
+            return build_result(
+                "unavailable",
+                "Could not read profile page.",
             )
 
         signals = await self._read_action_signals(username)
@@ -2168,22 +2240,19 @@ class LinkedInExtractor:
         )
 
         if state == "self_profile":
-            return _connection_result(
-                url,
+            return build_result(
                 "connect_unavailable",
                 "Cannot send a connection request to your own profile.",
                 profile=page_text,
             )
         if state == "already_connected":
-            return _connection_result(
-                url,
+            return build_result(
                 "already_connected",
                 "You are already connected with this profile.",
                 profile=page_text,
             )
         if state == "pending":
-            return _connection_result(
-                url,
+            return build_result(
                 "pending",
                 "A connection request is already pending for this profile.",
                 profile=page_text,
@@ -2199,8 +2268,7 @@ class LinkedInExtractor:
             # guess.
             clicked = await self._click_incoming_accept()
             if not clicked:
-                return _connection_result(
-                    url,
+                return build_result(
                     "send_failed",
                     "Could not find or click the Accept button.",
                     profile=page_text,
@@ -2221,14 +2289,12 @@ class LinkedInExtractor:
                 if verified_state == "already_connected":
                     break
             if verified_state != "already_connected":
-                return _connection_result(
-                    url,
+                return build_result(
                     "send_failed",
                     "Accepted, but the profile did not transition to 1st-degree.",
                     profile=verified_text or page_text,
                 )
-            return _connection_result(
-                url,
+            return build_result(
                 "accepted",
                 "Connection request accepted.",
                 profile=verified_text,
@@ -2249,6 +2315,7 @@ class LinkedInExtractor:
                 # doesn't intercept the upcoming page transition.
                 try:
                     await self._page.keyboard.press("Escape")
+                    self._record_interaction()
                 except Exception:
                     logger.debug("Escape after More-menu reread failed", exc_info=True)
                 logger.info("Post-More signals for %s: signals=%s", username, signals)
@@ -2273,15 +2340,13 @@ class LinkedInExtractor:
                 await self._navigate_to_page(invite_url)
                 note_limit_message = await self._probe_invite_note_limit()
                 if note_limit_message is not None:
-                    return _connection_result(
-                        url,
+                    return build_result(
                         "custom_note_limit_reached",
                         note_limit_message,
                         note_sent=False,
                         profile=page_text,
                     )
-            return _connection_result(
-                url,
+            return build_result(
                 "connect_unavailable",
                 "LinkedIn did not expose a usable Connect action for this profile.",
                 profile=page_text,
@@ -2293,16 +2358,14 @@ class LinkedInExtractor:
             note
         )
         if note_limit_message is not None:
-            return _connection_result(
-                url,
+            return build_result(
                 "custom_note_limit_reached",
                 note_limit_message,
                 note_sent=False,
                 profile=page_text,
             )
         if not submitted:
-            return _connection_result(
-                url,
+            return build_result(
                 "connect_unavailable",
                 "LinkedIn did not open a usable invite dialog for this profile.",
                 profile=page_text,
@@ -2314,16 +2377,14 @@ class LinkedInExtractor:
         verified_state = detect_connection_state(verified_signals)
 
         if verified_signals.has_invite_anchor:
-            return _connection_result(
-                url,
+            return build_result(
                 "send_failed",
                 "Submitted the invite dialog but the profile still exposes Connect.",
                 note_sent=note_sent,
                 profile=verified_text or page_text,
             )
 
-        return _connection_result(
-            url,
+        return build_result(
             "connected",
             "Connection request sent."
             + (f" State after send: {verified_state}." if verified_state else ""),
@@ -2375,7 +2436,7 @@ class LinkedInExtractor:
         except PlaywrightTimeoutError:
             logger.debug("No <main> element found on %s", url)
 
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
 
         sidebar_data: dict[str, Any] = await self._page.evaluate(
             """() => {
@@ -2485,7 +2546,7 @@ class LinkedInExtractor:
             except PlaywrightTimeoutError:
                 logger.debug("No <main> on Show all page for section %s", section_key)
 
-            await handle_modal_close(self._page)
+            await handle_modal_close(self._page, on_click=self._record_click)
 
             expanded_links: list[str] = await self._page.evaluate(
                 """() => {
@@ -2523,10 +2584,12 @@ class LinkedInExtractor:
                     merged.append(link)
             sidebar_profiles[section_key] = merged
 
-        return {
-            "url": url,
-            "sidebar_profiles": sidebar_profiles,
-        }
+        return self._attach_click_count(
+            {
+                "url": url,
+                "sidebar_profiles": sidebar_profiles,
+            }
+        )
 
     async def _resolve_message_compose_href(self) -> str | None:
         """Return the direct recipient-specific compose URL from a profile page."""
@@ -2658,6 +2721,7 @@ class LinkedInExtractor:
             {"candidates": normalized_candidates},
         )
         if selected:
+            self._record_click()
             await asyncio.sleep(0.75)
         return bool(selected)
 
@@ -2837,7 +2901,7 @@ class LinkedInExtractor:
         await self._navigate_to_page("https://www.linkedin.com/messaging/")
         await detect_rate_limit(self._page)
         await self._wait_for_main_text(log_context="Messaging inbox")
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         await self._scroll_main_scrollable_region(
             position="bottom", attempts=2, pause_time=0.5
         )
@@ -2857,7 +2921,7 @@ class LinkedInExtractor:
             f"https://www.linkedin.com/messaging/?searchTerm={quote_plus(display_name)}"
         )
         await detect_rate_limit(self._page)
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         await self._wait_for_main_text(log_context="Messaging search results")
         return _match(
             await self._extract_conversation_thread_refs(
@@ -2885,7 +2949,7 @@ class LinkedInExtractor:
         except PlaywrightTimeoutError:
             logger.debug("Profile page did not load for %s", linkedin_username)
 
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         display_name = await self._read_profile_display_name()
         if not display_name:
             raise LinkedInScraperException(
@@ -2998,6 +3062,8 @@ class LinkedInExtractor:
         if section_errors:
             result["section_errors"] = section_errors
 
+        result = self._attach_click_count(result)
+
         if callbacks:
             await callbacks.on_complete("company profile", result)
 
@@ -3038,7 +3104,7 @@ class LinkedInExtractor:
             result["references"] = references
         if section_errors:
             result["section_errors"] = section_errors
-        return result
+        return self._attach_click_count(result)
 
     @staticmethod
     def _build_connections_page_url(start: int = 0) -> str:
@@ -3263,7 +3329,7 @@ class LinkedInExtractor:
         await self._navigate_to_page(base_url)
         await detect_rate_limit(self._page)
         await self._wait_for_main_text(log_context="Connections page")
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
 
         all_connections: list[ConnectionEntry] = []
         seen_urls: set[str] = set()
@@ -3391,7 +3457,7 @@ class LinkedInExtractor:
             result["section_errors"] = section_errors
         if request_url != base_url:
             result["api_url"] = request_url
-        return result
+        return self._attach_click_count(result)
 
     async def scrape_job(self, job_id: str) -> dict[str, Any]:
         """Scrape a single job posting.
@@ -3422,7 +3488,7 @@ class LinkedInExtractor:
             result["references"] = references
         if section_errors:
             result["section_errors"] = section_errors
-        return result
+        return self._attach_click_count(result)
 
     async def _extract_job_ids(self) -> list[str]:
         """Extract unique job IDs from job card links on the current page.
@@ -3504,9 +3570,14 @@ class LinkedInExtractor:
             logger.debug("No <main> element found on %s", url)
             main_found = False
 
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         if main_found:
-            await scroll_job_sidebar(self._page, pause_time=0.5, max_scrolls=5)
+            await scroll_job_sidebar(
+                self._page,
+                pause_time=0.5,
+                max_scrolls=5,
+                on_scroll=self._record_interaction,
+            )
 
         raw_result = await self._extract_root_content(["main"])
         raw = raw_result["text"]
@@ -3743,7 +3814,7 @@ class LinkedInExtractor:
             }
         if section_errors:
             result["section_errors"] = section_errors
-        return result
+        return self._attach_click_count(result)
 
     async def _extract_saved_jobs_page(
         self,
@@ -3798,9 +3869,14 @@ class LinkedInExtractor:
             logger.debug("No <main> element found on %s", url)
             main_found = False
 
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         if main_found:
-            await scroll_to_bottom(self._page, pause_time=0.5, max_scrolls=5)
+            await scroll_to_bottom(
+                self._page,
+                pause_time=0.5,
+                max_scrolls=5,
+                on_scroll=self._record_interaction,
+            )
 
         raw_result = await self._extract_root_content(["main"])
         raw = raw_result["text"]
@@ -3971,7 +4047,7 @@ class LinkedInExtractor:
             }
         if section_errors:
             result["section_errors"] = section_errors
-        return result
+        return self._attach_click_count(result)
 
     async def search_people(
         self,
@@ -4047,7 +4123,7 @@ class LinkedInExtractor:
             result["references"] = references
         if section_errors:
             result["section_errors"] = section_errors
-        return result
+        return self._attach_click_count(result)
 
     async def search_companies(
         self,
@@ -4081,7 +4157,7 @@ class LinkedInExtractor:
             result["references"] = references
         if section_errors:
             result["section_errors"] = section_errors
-        return result
+        return self._attach_click_count(result)
 
     @staticmethod
     def _build_content_search_url(
@@ -4178,7 +4254,7 @@ class LinkedInExtractor:
             result["references"] = references
         if section_errors:
             result["section_errors"] = section_errors
-        return result
+        return self._attach_click_count(result)
 
     async def get_inbox(self, limit: int = 20) -> dict[str, Any]:
         """List recent conversations from the messaging inbox."""
@@ -4186,7 +4262,7 @@ class LinkedInExtractor:
         await self._navigate_to_page(url)
         await detect_rate_limit(self._page)
         await self._wait_for_main_text(log_context="Messaging inbox")
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
 
         scrolls = max(1, limit // 10)
         await self._scroll_main_scrollable_region(
@@ -4271,7 +4347,7 @@ class LinkedInExtractor:
         # clickable element, so class-name selectors are unavoidable here.
         # The aria-label value flows through unmodified — Python strips any
         # known locale prefix to derive a clean participant name for refs.
-        conversations: list[dict[str, str]] = await self._page.evaluate(
+        conversations_payload = await self._page.evaluate(
             """async ({ limit, nameFilter }) => {
                 const labels = Array.from(document.querySelectorAll(
                     'main li label[aria-label]'
@@ -4287,6 +4363,7 @@ class LinkedInExtractor:
                 const wanted = (nameFilter || '')
                     .replace(/\\s+/g, ' ').trim().toLowerCase();
                 const results = [];
+                let clicksPerformed = 0;
                 for (let i = 0; i < cap; i++) {
                     const label = labels[i];
                     const ariaLabel = label.getAttribute('aria-label') || '';
@@ -4299,6 +4376,7 @@ class LinkedInExtractor:
                     if (!clickTarget) continue;
                     const before = location.href;
                     clickTarget.click();
+                    clicksPerformed += 1;
                     // Poll for the SPA URL to settle on the thread route. The
                     // Ember click handler can take a moment to bind after the
                     // label mounts, and a fixed sleep races the initial click.
@@ -4316,10 +4394,17 @@ class LinkedInExtractor:
                         results.push({ ariaLabel, threadId: match[1] });
                     }
                 }
-                return results;
+                return { conversations: results, clicksPerformed };
             }""",
             {"limit": limit, "nameFilter": name_filter},
         )
+        if isinstance(conversations_payload, list):
+            conversations = conversations_payload
+            clicks_performed = 0
+        else:
+            clicks_performed = int(conversations_payload.get("clicksPerformed") or 0)
+            conversations = conversations_payload.get("conversations") or []
+        self._record_click(clicks_performed)
         refs: list[Reference] = []
         for conv in conversations:
             ref: Reference = {
@@ -4383,7 +4468,7 @@ class LinkedInExtractor:
 
         await detect_rate_limit(self._page)
         await self._wait_for_main_text(log_context="Conversation")
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         await self._scroll_main_scrollable_region(
             position="top", attempts=3, pause_time=0.5
         )
@@ -4427,7 +4512,7 @@ class LinkedInExtractor:
         )
         await self._navigate_to_page(search_url)
         await detect_rate_limit(self._page)
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         await self._wait_for_main_text(log_context="Messaging search")
 
         raw_result = await self._extract_root_content(["main"])
@@ -4482,7 +4567,7 @@ class LinkedInExtractor:
         except PlaywrightTimeoutError:
             logger.debug("Profile page did not load for %s", linkedin_username)
 
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         display_name = await self._read_profile_display_name()
         if profile_urn:
             # Build the full compose URL that LinkedIn's own Message button
@@ -4515,7 +4600,7 @@ class LinkedInExtractor:
         except PlaywrightTimeoutError:
             logger.debug("Compose page did not fully load for %s", linkedin_username)
 
-        await handle_modal_close(self._page)
+        await handle_modal_close(self._page, on_click=self._record_click)
         message_surface = await self._wait_for_message_surface()
         logger.debug(
             "Message surface for %s before hydration was %s",
@@ -4620,6 +4705,7 @@ class LinkedInExtractor:
             )
         await asyncio.sleep(0.1)
         await self._page.keyboard.type(message, delay=15)
+        self._record_interaction()
         await asyncio.sleep(0.3)
 
         # patchright actionability also blocks send_button.click(). Use JS click
@@ -4641,8 +4727,11 @@ class LinkedInExtractor:
                 return true;
             }"""
         )
+        if sent_via_js:
+            self._record_click()
         if not sent_via_js:
             await self._page.keyboard.press("Enter")
+            self._record_interaction()
 
         if not await self._message_text_visible(message):
             await self._dismiss_message_ui()

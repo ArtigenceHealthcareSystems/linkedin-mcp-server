@@ -58,6 +58,8 @@ This MCP server is **free** and **open source**, supported by [**Unipile**](http
 | `search_posts` | Search posts/content globally by keyword (the "Posts" tab) with an optional recency filter (past-24h/past-week/past-month) | working |
 | `close_session` | Close browser session and clean up resources | working |
 
+All tool responses now include `clicks_performed`, which counts successful UI actions for that single tool call. That includes page navigation, clicks, typing, scrolling, and keyboard presses.
+
 <br/>
 <br/>
 

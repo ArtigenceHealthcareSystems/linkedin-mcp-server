@@ -53,14 +53,16 @@ for section_name, (suffix, is_overlay) in PERSON_SECTIONS.items():
 **Return format** — all scraping tools return:
 
 ```python
-{"url": str, "sections": {name: raw_text}}
+{"url": str, "clicks_performed": int, "sections": {name: raw_text}}
 # Optional compact link metadata:
-{"url": str, "sections": {name: raw_text}, "references": {section: [{kind, url, text?, context?, value?}, ...]}}
+{"url": str, "clicks_performed": int, "sections": {name: raw_text}, "references": {section: [{kind, url, text?, context?, value?}, ...]}}
 # When unknown section names are provided:
-{"url": str, "sections": {name: raw_text}, "unknown_sections": [name, ...]}
+{"url": str, "clicks_performed": int, "sections": {name: raw_text}, "unknown_sections": [name, ...]}
 # search_jobs and get_saved_jobs also return:
-{"url": str, "sections": {name: raw_text}, "job_ids": [id, ...]}
+{"url": str, "clicks_performed": int, "sections": {name: raw_text}, "job_ids": [id, ...]}
 ```
+
+`clicks_performed` counts successful UI actions for that one tool call. That includes page navigation, clicks, typing, scrolling, and keyboard presses.
 
 `sections` remains the main readable payload. `references` is a compact supplement for entity/article traversal. LinkedIn references are emitted as relative paths to minimize token use.
 

@@ -14,6 +14,7 @@ from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
 from linkedin_mcp_server.core.exceptions import AuthenticationError
 from linkedin_mcp_server.dependencies import get_ready_extractor, handle_auth_error
 from linkedin_mcp_server.error_handler import raise_tool_error
+from linkedin_mcp_server.tools import ensure_clicks_performed
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def register_job_tools(
             ctx: FastMCP context for progress reporting
 
         Returns:
-            Dict with url, sections (name -> raw text), and optional references.
+            Dict with url, clicks_performed, sections (name -> raw text), and optional references.
             The LLM should parse the raw text to extract job details.
         """
         try:
@@ -60,7 +61,7 @@ def register_job_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -108,7 +109,7 @@ def register_job_tools(
             sort_by: Sort results (date, relevance)
 
         Returns:
-            Dict with url, sections (name -> raw text), job_ids (list of
+            Dict with url, clicks_performed, sections (name -> raw text), job_ids (list of
             numeric job ID strings usable with get_job_details), and optional references.
         """
         try:
@@ -140,7 +141,7 @@ def register_job_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
@@ -172,7 +173,7 @@ def register_job_tools(
             max_pages: Maximum number of saved-jobs pages to load (1-10, default 3)
 
         Returns:
-            Dict with url, sections (name -> raw text), job_ids (list of
+            Dict with url, clicks_performed, sections (name -> raw text), job_ids (list of
             numeric job ID strings usable with get_job_details), and optional references.
         """
         try:
@@ -189,7 +190,7 @@ def register_job_tools(
 
             await ctx.report_progress(progress=100, total=100, message="Complete")
 
-            return result
+            return ensure_clicks_performed(result, extractor)
 
         except AuthenticationError as e:
             try:
